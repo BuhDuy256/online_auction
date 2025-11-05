@@ -1,13 +1,11 @@
 import express, { json } from 'express';
-import listRoutes from './api/routes/listRoutes';
-import taskRoutes from './api/routes/taskRoutes'
+import listRoutes from './api/controllers/list.controller.js';
 
 const port = process.env.PORT || 3000;
 const app = express();
 
 app.use(json());
 app.use('', listRoutes)
-app.use('list/:listId/task', taskRoutes)
 app.use((error, req, res) => {
     const statusCode = error.statusCode || 500;
     const message = error.message || 'Internal Server Error';
