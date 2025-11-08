@@ -7,3 +7,61 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+
+model Conversation {
+  id        BigInt    @id @default(autoincrement())
+  name      String?   @db.VarChar(100)
+  creatorId BigInt?   @map("creator_id")
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Quan hệ
+  creator      User?         @relation("CreatedConversations", fields: [creatorId], references: [id], onUpdate: NoAction)
+  messages     Message[]
+  participants Participant[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             BigInt    @id @default(autoincrement())
+  conversationId BigInt    @map("conversation_id")
+  senderId       BigInt?   @map("sender_id")
+  body           String
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Quan hệ
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sender       User?        @relation(fields: [senderId], references: [id], onUpdate: NoAction)
+
+  @@index([conversationId, createdAt(sort: Desc)], map: "idx_messages_conversation_id_created_at")
+  @@map("messages")
+}
+
+model Participant {
+  userId         BigInt    @map("user_id")
+  conversationId BigInt    @map("conversation_id")
+  joinedAt       DateTime? @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  // Quan hệ
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([userId, conversationId])
+  @@index([userId], map: "idx_participants_user_id")
+  @@map("participants")
+}
+
+model User {
+  id        BigInt    @id @default(autoincrement())
+  username  String    @unique @db.VarChar(50)
+  password  String    @db.VarChar(255)
+  fullName  String?   @map("full_name") @db.VarChar(100)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Quan hệ ngược
+  createdConversations Conversation[] @relation("CreatedConversations")
+  messages             Message[]
+  participants         Participant[]
+
+  @@map("users")
+}
