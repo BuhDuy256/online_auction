@@ -22,6 +22,7 @@
     "package.json": "^2.0.1",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
+    "socket.io": "^4.8.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
