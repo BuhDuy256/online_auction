@@ -8,6 +8,8 @@ import dotenv from "dotenv";
 
 // routers
 import authRouter from "./api/routes/auth.route.js";
+import userRouter from "./api/routes/user.route.js";
+import conversationRouter from "./api/routes/conversation.route.js";
 
 dotenv.config();
 
@@ -18,6 +20,8 @@ app.use(express.json());
 app.use(cors());
 
 app.use("/auth", authRouter);
+app.use("/users", userRouter);
+app.use("/conversations", conversationRouter);
 
 app.get("/", (req, res) => {
   res.send("Hello, World!");

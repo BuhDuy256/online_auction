@@ -15,3 +15,10 @@ export const signupSchema = z.object({
       .max(100, "Name cannot exceed 100 characters"),
   }),
 });
+
+export const loginSchema = z.object({
+  body: z.object({
+    username: z.string({ required_error: "Username is required" }),
+    password: z.string({ required_error: "Password is required" }),
+  }),
+});

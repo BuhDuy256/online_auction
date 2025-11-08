@@ -18,6 +18,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "package.json": "^2.0.1",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
