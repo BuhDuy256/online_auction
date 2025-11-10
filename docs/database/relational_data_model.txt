@@ -8,8 +8,13 @@ products(product_id, category_id, seller_id, highest_bidder_id, name, current_pr
 product_descriptions(description_id, product_id, content, created_at)
 product_images(image_id, product_id, image_url)
 watchlist(user_id, product_id)
-bids(bid_id, product_id, bidder_id, amount, created_at)
-questions_id(question_id, product_id, asker_id, question_text, reply_text, asked_at, created_at) # Chat 1 - 1
-order(order_id, product_id, winnder_id, seller_id, final_price, status, created_at)
+auto_bids(auto_bid_id, product_id, bidder_id, max_amount, created_at)
+product_rejections(rejection_id, product_id, bidder_id, reason, created_at)
+questions(question_id, product_id, asker_id, question_text, answer_text, asked_at, answered_at) # Chat 1 - 1
+orders(order_id, product_id, winner_id, seller_id, final_price, status, created_at)
 review(review_id, order_id, reviewer_id, reviewered_id, rating, comment, created_at)
 user_otps(otp_id, user_id, otp_code, expires_at)
+upgrade_request(request_id, user_id, status, created_at, approved_at)
+order_chat(message_id, order_id, sender_id, receiver_id, content, created_at)
+notifications(notification_id, user_id, type, content, is_read, created_at)
+invoices(invoice_id, order_id, buyer_address, payment_status, shipping_invoice, created_at, updated_at)
