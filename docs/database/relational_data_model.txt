@@ -1,0 +1,15 @@
+users(user_id, full_name, email, password, positive_reviews, negative_reviews, status, created_at) # rbac
+roles(role_id, name) # rbac
+permissions(permission_id, name) # rbac
+users_roles(user_id, role_id) # rbac
+roles_permissions(role_id, permission_id) # rbac
+category(category_id, name, left, right) # nested set module
+products(product_id, category_id, seller_id, highest_bidder_id, name, current_price, buy_now_price, start_price, step_price, start_time, end_time, auto_extend, status)
+product_descriptions(description_id, product_id, content, created_at)
+product_images(image_id, product_id, image_url)
+watchlist(user_id, product_id)
+bids(bid_id, product_id, bidder_id, amount, created_at)
+questions_id(question_id, product_id, asker_id, question_text, reply_text, asked_at, created_at) # Chat 1 - 1
+order(order_id, product_id, winnder_id, seller_id, final_price, status, created_at)
+review(review_id, order_id, reviewer_id, reviewered_id, rating, comment, created_at)
+user_otps(otp_id, user_id, otp_code, expires_at)
