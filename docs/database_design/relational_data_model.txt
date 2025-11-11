@@ -3,11 +3,11 @@ roles(role_id, name) # rbac
 permissions(permission_id, name) # rbac
 users_roles(user_id, role_id) # rbac
 roles_permissions(role_id, permission_id) # rbac
-categories(category_id, name, slug, parent_id) # 2-level only
-products(product_id, category_id, seller_id, highest_bidder_id, name, thumbnail_url, current_price, buy_now_price, start_price, step_price, start_time, end_time, bid_count, auto_extend, status)
+categories(category_id, name, slug, parent_id) # 2-level only, ON DELETE RESTRICT from products, ck_category_two_levels
+products(product_id, category_id, seller_id, highest_bidder_id, name, thumbnail_url, current_price, buy_now_price, start_price, step_price, start_time, end_time, bid_count, auto_extend, status, fts) # fts=tsvector for full-text search, trigger: products_fts_update()
 auto_bids(auto_bid_id, product_id, bidder_id, max_amount, created_at)
 bids(bid_id, product_id, bidder_id, amount, is_auto, created_at)
-product_descriptions(description_id, product_id, author_id, content, lang, version, created_at) # append-only
+product_descriptions(description_id, product_id, author_id, content, lang, version, created_at) # append-only, triggers FTS update
 product_images(image_id, product_id, image_url)
 watchlist(user_id, product_id)
 product_rejections(rejection_id, product_id, bidder_id, reason, created_at)
@@ -16,7 +16,7 @@ orders(order_id, product_id, winner_id, seller_id, final_price, status, cancella
 invoices(invoice_id, order_id, shipping_address, payment_proof_url, shipping_tracking_code, created_at, updated_at)
 reviews(review_id, order_id, reviewer_id, reviewered_id, rating, content, created_at, updated_at) # can update rating
 user_otps(otp_id, user_id, otp_code, purpose, created_at, expires_at, consumed_at)
-upgrade_requests(request_id, user_id, status, created_at, approved_at)
+upgrade_requests(request_id, user_id, status, created_at, approved_at, expires_at) # expires_at = created_at + 7 days
 order_chat(message_id, order_id, sender_id, receiver_id, content, created_at)
 notifications(notification_id, user_id, type, channel, content, is_read, read_at, action_url, created_at)
 system_settings(setting_key, setting_value, description, updated_at) # configurable by admin
