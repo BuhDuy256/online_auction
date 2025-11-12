@@ -1,0 +1,330 @@
+@startuml UC10_DuyetNangCapTaiKhoan
+' --- Sequence Diagram: Duyệt nâng cấp tài khoản Bidder → Seller ---
+' Database Schema: upgrade_requests, users, users_roles, roles
+' Reference: Section 2.6, 4.3 (Project Description)
+' Features: 7-day expiration, RBAC role assignment, email notifications
+
+autonumber
+actor Bidder
+actor Admin
+participant "Web Browser" as BidderBrowser
+participant "Admin Panel" as AdminBrowser
+participant "Web Server\n(Controller)" as Controller
+participant "Upgrade Service" as UpgradeService
+participant "User Repository" as UserRepo
+participant "Request Repository" as RequestRepo
+participant "Email Service" as EmailService
+participant "Notification Service" as NotificationService
+database "Database" as DB
+
+== Phase 1: Bidder Requests Upgrade (Section 2.6) ==
+
+Bidder -> BidderBrowser : Truy cập trang "Xin nâng cấp lên Seller"
+BidderBrowser -> Controller : GET /user/request-seller-upgrade
+
+activate Controller
+Controller -> UpgradeService : checkExistingRequest(user_id)
+activate UpgradeService
+
+' Check if user already has pending request
+UpgradeService -> RequestRepo : getPendingRequest(user_id)
+activate RequestRepo
+RequestRepo -> DB : SELECT request_id, status, created_at, expires_at\nFROM upgrade_requests\nWHERE user_id = :user_id AND status = 'pending'
+activate DB
+DB --> RequestRepo : NULL or existing request
+deactivate DB
+deactivate RequestRepo
+
+alt User already has pending request
+    UpgradeService --> Controller : {has_pending: true, request: {...}}
+    Controller -> BidderBrowser : Hiển thị thông báo "Bạn đã gửi yêu cầu trước đó"
+else No pending request - Show form
+    UpgradeService --> Controller : {has_pending: false}
+    deactivate UpgradeService
+    Controller -> BidderBrowser : Hiển thị form xác nhận
+    deactivate Controller
+end
+
+Bidder -> BidderBrowser : Nhấn "Gửi yêu cầu nâng cấp"
+BidderBrowser -> Controller : POST /user/request-seller-upgrade
+
+activate Controller
+Controller -> UpgradeService : createUpgradeRequest(user_id)
+activate UpgradeService
+
+' Check user status
+UpgradeService -> UserRepo : getUser(user_id)
+activate UserRepo
+UserRepo -> DB : SELECT user_id, status FROM users WHERE user_id = :user_id
+activate DB
+DB --> UserRepo : User details
+deactivate DB
+deactivate UserRepo
+
+alt User status != 'active'
+    UpgradeService --> Controller : Error: "Account must be active"
+    Controller -> BidderBrowser : Display error
+    BidderBrowser -> Bidder : "Tài khoản phải được kích hoạt"
+end
+
+' Check if user already has seller role
+UpgradeService -> UserRepo : getUserRoles(user_id)
+activate UserRepo
+UserRepo -> DB : SELECT r.name FROM roles r\nJOIN users_roles ur ON r.role_id = ur.role_id\nWHERE ur.user_id = :user_id
+activate DB
+DB --> UserRepo : ['bidder']
+deactivate DB
+deactivate UserRepo
+
+alt User already has 'seller' role
+    UpgradeService --> Controller : Error: "Already a seller"
+    Controller -> BidderBrowser : Display error
+    BidderBrowser -> Bidder : "Bạn đã là người bán"
+end
+
+' Create upgrade request with 7-day expiration
+UpgradeService -> RequestRepo : createRequest(user_id)
+activate RequestRepo
+RequestRepo -> DB : INSERT INTO upgrade_requests (\n  user_id, status, created_at, expires_at\n) VALUES (\n  :user_id, 'pending', CURRENT_TIMESTAMP,\n  CURRENT_TIMESTAMP + INTERVAL '7 days'\n)
+activate DB
+DB --> RequestRepo : request_id (newly created)
+deactivate DB
+deactivate RequestRepo
+
+' Update user status to 'pending_upgrade'
+UpgradeService -> UserRepo : updateUserStatus(user_id, 'pending_upgrade')
+activate UserRepo
+UserRepo -> DB : UPDATE users\nSET status = 'pending_upgrade'\nWHERE user_id = :user_id
+activate DB
+DB --> UserRepo : Updated
+deactivate DB
+deactivate UserRepo
+
+' Notify admins
+UpgradeService -> NotificationService : notifyAdmins('new_upgrade_request', user_id)
+activate NotificationService
+NotificationService -> DB : INSERT INTO notifications\n(user_id, type, content, action_url)\nSELECT user_id, 'new_upgrade_request', '...', '/admin/upgrade-requests'\nFROM users_roles ur\nJOIN roles r ON ur.role_id = r.role_id\nWHERE r.name = 'admin'
+activate DB
+DB --> NotificationService : Created
+deactivate DB
+deactivate NotificationService
+
+UpgradeService --> Controller : {success: true, request_id: request_id, expires_at: timestamp}
+deactivate UpgradeService
+
+Controller -> BidderBrowser : Success message
+deactivate Controller
+BidderBrowser -> Bidder : "Yêu cầu đã được gửi. Admin sẽ xét duyệt trong vòng 7 ngày"
+
+== Phase 2: Admin Views Upgrade Requests ==
+
+Admin -> AdminBrowser : Truy cập trang "Quản lý yêu cầu nâng cấp"
+AdminBrowser -> Controller : GET /admin/upgrade-requests?status=pending
+
+activate Controller
+Controller -> UpgradeService : getUpgradeRequests(status='pending')
+activate UpgradeService
+
+UpgradeService -> RequestRepo : getRequests(status)
+activate RequestRepo
+RequestRepo -> DB : SELECT ur.request_id, ur.user_id, ur.created_at, ur.expires_at,\n  u.full_name, u.email, u.positive_reviews, u.negative_reviews\nFROM upgrade_requests ur\nJOIN users u ON ur.user_id = u.user_id\nWHERE ur.status = :status\nORDER BY ur.created_at ASC
+activate DB
+DB --> RequestRepo : List of pending requests
+deactivate DB
+deactivate RequestRepo
+
+UpgradeService --> Controller : {requests: [...], total_count: N}
+deactivate UpgradeService
+
+Controller -> AdminBrowser : Render table with:\n- User info\n- Rating (positive/negative)\n- Request date\n- Expires in X days\n- Approve/Reject buttons
+deactivate Controller
+
+== Phase 3: Admin Approves Request ==
+
+Admin -> AdminBrowser : Nhấn "Duyệt" (Approve) cho user
+AdminBrowser -> Controller : POST /admin/upgrade-requests/{request_id}/approve
+
+activate Controller
+Controller -> UpgradeService : approveRequest(admin_id, request_id)
+activate UpgradeService
+
+' Get request details
+UpgradeService -> RequestRepo : getRequest(request_id)
+activate RequestRepo
+RequestRepo -> DB : SELECT request_id, user_id, status, expires_at\nFROM upgrade_requests\nWHERE request_id = :request_id
+activate DB
+DB --> RequestRepo : Request details
+deactivate DB
+deactivate RequestRepo
+
+alt Request not found OR status != 'pending'
+    UpgradeService --> Controller : Error: "Request not found or already processed"
+    Controller -> AdminBrowser : Display error
+    AdminBrowser -> Admin : "Yêu cầu không hợp lệ"
+end
+
+alt Request expired (expires_at < CURRENT_TIMESTAMP)
+    ' Auto-reject expired request
+    UpgradeService -> RequestRepo : updateRequestStatus(request_id, 'rejected')
+    activate RequestRepo
+    RequestRepo -> DB : UPDATE upgrade_requests\nSET status = 'rejected'\nWHERE request_id = :request_id
+    activate DB
+    DB --> RequestRepo : Updated
+    deactivate DB
+    deactivate RequestRepo
+    
+    UpgradeService --> Controller : Error: "Request has expired"
+    Controller -> AdminBrowser : Display error
+    AdminBrowser -> Admin : "Yêu cầu đã hết hạn"
+end
+
+' Approve request
+UpgradeService -> RequestRepo : updateRequestStatus(request_id, 'approved')
+activate RequestRepo
+RequestRepo -> DB : UPDATE upgrade_requests\nSET status = 'approved', approved_at = CURRENT_TIMESTAMP\nWHERE request_id = :request_id
+activate DB
+DB --> RequestRepo : Updated
+deactivate DB
+deactivate RequestRepo
+
+' Add 'seller' role to user (RBAC)
+UpgradeService -> UserRepo : addRoleToUser(user_id, 'seller')
+activate UserRepo
+UserRepo -> DB : INSERT INTO users_roles (user_id, role_id)\nVALUES (\n  :user_id,\n  (SELECT role_id FROM roles WHERE name = 'seller')\n)
+activate DB
+DB --> UserRepo : Role assigned
+deactivate DB
+deactivate UserRepo
+
+' Update user status back to 'active'
+UpgradeService -> UserRepo : updateUserStatus(user_id, 'active')
+activate UserRepo
+UserRepo -> DB : UPDATE users\nSET status = 'active'\nWHERE user_id = :user_id
+activate DB
+DB --> UserRepo : Updated
+deactivate DB
+deactivate UserRepo
+
+' Send email notification to user
+UpgradeService -> EmailService : sendUpgradeApprovalEmail(user_id)
+activate EmailService
+EmailService -> EmailService : Send email:\n"Chúc mừng! Tài khoản của bạn đã được nâng cấp lên Seller"
+deactivate EmailService
+
+' Create in-app notification
+UpgradeService -> NotificationService : createNotification(user_id, 'upgrade_approved')
+activate NotificationService
+NotificationService -> DB : INSERT INTO notifications\n(user_id, type, content, action_url)\nVALUES (:user_id, 'upgrade_approved', '...', '/user/profile')
+activate DB
+DB --> NotificationService : notification_id
+deactivate DB
+deactivate NotificationService
+
+UpgradeService --> Controller : {success: true, message: "Request approved"}
+deactivate UpgradeService
+
+Controller -> AdminBrowser : Success message, reload table
+deactivate Controller
+AdminBrowser -> Admin : "Đã duyệt yêu cầu thành công"
+
+== Phase 4: Admin Rejects Request ==
+
+Admin -> AdminBrowser : Nhấn "Từ chối" (Reject) cho user
+AdminBrowser -> Controller : POST /admin/upgrade-requests/{request_id}/reject\n{reason: "Lý do từ chối..."}
+
+activate Controller
+Controller -> UpgradeService : rejectRequest(admin_id, request_id, reason)
+activate UpgradeService
+
+' Get request details
+UpgradeService -> RequestRepo : getRequest(request_id)
+activate RequestRepo
+RequestRepo -> DB : SELECT request_id, user_id, status FROM upgrade_requests\nWHERE request_id = :request_id
+activate DB
+DB --> RequestRepo : Request details
+deactivate DB
+deactivate RequestRepo
+
+alt Request not found OR status != 'pending'
+    UpgradeService --> Controller : Error: "Invalid request"
+    Controller -> AdminBrowser : Display error
+    AdminBrowser -> Admin : "Yêu cầu không hợp lệ"
+end
+
+' Reject request
+UpgradeService -> RequestRepo : updateRequestStatus(request_id, 'rejected')
+activate RequestRepo
+RequestRepo -> DB : UPDATE upgrade_requests\nSET status = 'rejected'\nWHERE request_id = :request_id
+activate DB
+DB --> RequestRepo : Updated
+deactivate DB
+deactivate RequestRepo
+
+' Update user status back to 'active' (not 'pending_upgrade')
+UpgradeService -> UserRepo : updateUserStatus(user_id, 'active')
+activate UserRepo
+UserRepo -> DB : UPDATE users SET status = 'active' WHERE user_id = :user_id
+activate DB
+DB --> UserRepo : Updated
+deactivate DB
+deactivate UserRepo
+
+' Send rejection email
+UpgradeService -> EmailService : sendUpgradeRejectionEmail(user_id, reason)
+activate EmailService
+EmailService -> EmailService : Send email with reason
+deactivate EmailService
+
+' Create notification
+UpgradeService -> NotificationService : createNotification(user_id, 'upgrade_rejected')
+activate NotificationService
+NotificationService -> DB : INSERT INTO notifications...
+activate DB
+DB --> NotificationService : notification_id
+deactivate DB
+deactivate NotificationService
+
+UpgradeService --> Controller : {success: true, message: "Request rejected"}
+deactivate UpgradeService
+
+Controller -> AdminBrowser : Success message
+deactivate Controller
+AdminBrowser -> Admin : "Đã từ chối yêu cầu"
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  
+  **upgrade_requests:**
+  - request_id (PK)
+  - user_id (FK → users)
+  - status: ENUM('pending', 'approved', 'rejected')
+  - created_at: Timestamp
+  - approved_at: Nullable timestamp
+  - expires_at: created_at + 7 days
+  
+  **users:**
+  - status: 'pending_upgrade' when request pending
+  - status: 'active' after approval/rejection
+  
+  **users_roles (RBAC):**
+  - Bidder initially has only 'bidder' role
+  - After approval, gets additional 'seller' role
+  - User can have multiple roles
+  
+  **Business Rules (Section 2.6):**
+  - Bidder sends upgrade request
+  - Admin has 7 days to process (expires_at)
+  - Expired requests can be auto-rejected
+  - After approval: status='active', roles=['bidder', 'seller']
+  - After rejection: status='active', roles=['bidder']
+  - User can re-submit request after rejection
+  
+  **Notifications:**
+  - Email + in-app notification
+  - Notify all admins when new request created
+  - Notify user on approval/rejection
+end note
+
+@enduml

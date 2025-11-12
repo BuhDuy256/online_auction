@@ -1,0 +1,315 @@
+@startuml UC11_DanhGiaNguoiDung
+' --- Sequence Diagram: Đánh giá người dùng ---
+' Database Schema: reviews, orders, users (positive_reviews, negative_reviews)
+' Reference: Section 2.5, 3.5, Section 7 (Project Description)
+' Features: +1/-1 rating, can update review, DB triggers for user rating
+
+autonumber
+actor Bidder
+actor Seller
+participant "Browser" as BidderBrowser
+participant "Browser" as SellerBrowser
+participant "Web Server\n(Controller)" as Controller
+participant "Review Service" as ReviewService
+participant "Order Repository" as OrderRepo
+participant "Review Repository" as ReviewRepo
+database "Database" as DB
+
+== Scenario 1: Bidder Reviews Seller (After Winning) ==
+
+Bidder -> BidderBrowser : Truy cập "Sản phẩm đã thắng" → Click "Đánh giá"
+BidderBrowser -> Controller : GET /orders/{order_id}/review?reviewer=bidder
+
+activate Controller
+Controller -> ReviewService : getReviewForm(order_id, user_id)
+activate ReviewService
+
+' Check if order exists and user is authorized
+ReviewService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT order_id, winner_id, seller_id, status\nFROM orders\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.winner_id != user_id
+    ReviewService --> Controller : Error: "Unauthorized"
+    Controller -> BidderBrowser : HTTP 403
+    BidderBrowser -> Bidder : "Bạn không có quyền đánh giá"
+end
+
+alt order.status NOT IN ('completed', 'cancelled')
+    ReviewService --> Controller : Error: "Order not completed"
+    Controller -> BidderBrowser : Display message
+    BidderBrowser -> Bidder : "Chỉ có thể đánh giá sau khi hoàn tất đơn hàng"
+end
+
+' Check if review already exists
+ReviewService -> ReviewRepo : getExistingReview(order_id, reviewer_id=user_id, reviewered_id=seller_id)
+activate ReviewRepo
+ReviewRepo -> DB : SELECT review_id, rating, content, created_at\nFROM reviews\nWHERE order_id = :order_id\nAND reviewer_id = :user_id\nAND reviewered_id = :seller_id
+activate DB
+DB --> ReviewRepo : NULL or existing review
+deactivate DB
+deactivate ReviewRepo
+
+ReviewService --> Controller : {order: {...}, existing_review: null or {...}}
+deactivate ReviewService
+
+Controller -> BidderBrowser : Hiển thị form đánh giá:\n- Radio: 👍 (+1) hoặc 👎 (-1)\n- Textarea: Nhận xét (optional)\n- Note: Có thể thay đổi đánh giá sau
+deactivate Controller
+
+Bidder -> BidderBrowser : Chọn 👍 (+1), nhập nhận xét:\n"Sản phẩm đúng mô tả, giao hàng nhanh"
+Bidder -> BidderBrowser : Nhấn "Gửi đánh giá"
+
+BidderBrowser -> Controller : POST /orders/{order_id}/review\n{\n  reviewered_id: seller_id,\n  rating: 1,\n  content: "Sản phẩm đúng mô tả..."\n}
+
+activate Controller
+Controller -> ReviewService : submitReview(order_id, reviewer_id, reviewered_id, rating, content)
+activate ReviewService
+
+' Validate order and authorization
+ReviewService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT order_id, winner_id, seller_id, status FROM orders...
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+ReviewService -> ReviewService : Validate:\n- reviewer_id = winner_id\n- reviewered_id = seller_id\n- status IN ('completed', 'cancelled')\n- rating IN (1, -1)
+
+' Check if review already exists (for INSERT vs UPDATE)
+ReviewService -> ReviewRepo : findReview(order_id, reviewer_id, reviewered_id)
+activate ReviewRepo
+ReviewRepo -> DB : SELECT review_id FROM reviews\nWHERE order_id = :order_id\nAND reviewer_id = :reviewer_id\nAND reviewered_id = :reviewered_id
+activate DB
+DB --> ReviewRepo : NULL (no existing review)
+deactivate DB
+deactivate ReviewRepo
+
+alt Review does NOT exist - INSERT
+    ReviewService -> ReviewRepo : createReview(order_id, reviewer_id, reviewered_id, rating, content)
+    activate ReviewRepo
+    ReviewRepo -> DB : INSERT INTO reviews (\n  order_id, reviewer_id, reviewered_id,\n  rating, content, created_at\n) VALUES (\n  :order_id, :reviewer_id, :reviewered_id,\n  :rating, :content, CURRENT_TIMESTAMP\n)
+    activate DB
+    DB --> ReviewRepo : review_id (newly created)
+    
+    note right of DB
+      **DB Trigger: update_user_rating_on_review_insert**
+      Automatically executes after INSERT:
+      IF NEW.rating = 1 THEN
+        UPDATE users SET positive_reviews = positive_reviews + 1
+        WHERE user_id = NEW.reviewered_id
+      ELSE
+        UPDATE users SET negative_reviews = negative_reviews + 1
+        WHERE user_id = NEW.reviewered_id
+      END IF
+    end note
+    
+    deactivate DB
+    deactivate ReviewRepo
+
+else Review EXISTS - UPDATE (Section 2.5, 3.5)
+    note right of ReviewService
+      Người dùng được phép thay đổi đánh giá
+      (+/-) và nhận xét (Section 2.5, 3.5)
+    end note
+    
+    ReviewService -> ReviewRepo : updateReview(review_id, new_rating, new_content)
+    activate ReviewRepo
+    ReviewRepo -> DB : UPDATE reviews\nSET rating = :new_rating,\n    content = :new_content,\n    updated_at = CURRENT_TIMESTAMP\nWHERE review_id = :review_id
+    activate DB
+    DB --> ReviewRepo : Updated
+    
+    note right of DB
+      **DB Trigger: update_user_rating_on_review_update**
+      Executes after UPDATE when rating changes:
+      
+      IF OLD.rating != NEW.rating THEN
+        IF OLD.rating = 1 THEN
+          -- Decrease positive, increase negative
+          UPDATE users SET
+            positive_reviews = positive_reviews - 1,
+            negative_reviews = negative_reviews + 1
+          WHERE user_id = NEW.reviewered_id
+        ELSE
+          -- Increase positive, decrease negative
+          UPDATE users SET
+            positive_reviews = positive_reviews + 1,
+            negative_reviews = negative_reviews - 1
+          WHERE user_id = NEW.reviewered_id
+        END IF
+      END IF
+    end note
+    
+    deactivate DB
+    deactivate ReviewRepo
+end
+
+ReviewService --> Controller : {success: true, review_id: review_id}
+deactivate ReviewService
+
+Controller -> BidderBrowser : HTTP 200 OK\nRedirect to order details
+deactivate Controller
+
+BidderBrowser -> Bidder : "Đánh giá thành công"
+
+== Scenario 2: Seller Reviews Bidder ==
+
+Seller -> SellerBrowser : Truy cập "Sản phẩm đã bán" → Click "Đánh giá người mua"
+SellerBrowser -> Controller : GET /orders/{order_id}/review?reviewer=seller
+
+activate Controller
+Controller -> ReviewService : getReviewForm(order_id, seller_id)
+activate ReviewService
+
+ReviewService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT order_id, winner_id, seller_id, status FROM orders...
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.seller_id != seller_id
+    ReviewService --> Controller : Error: "Unauthorized"
+    Controller -> SellerBrowser : HTTP 403
+end
+
+ReviewService -> ReviewRepo : getExistingReview(order_id, seller_id, winner_id)
+activate ReviewRepo
+ReviewRepo -> DB : SELECT * FROM reviews\nWHERE order_id = :order_id\nAND reviewer_id = :seller_id\nAND reviewered_id = :winner_id
+activate DB
+DB --> ReviewRepo : NULL or existing
+deactivate DB
+deactivate ReviewRepo
+
+ReviewService --> Controller : {order: {...}, existing_review: ...}
+deactivate ReviewService
+
+Controller -> SellerBrowser : Hiển thị form đánh giá người mua
+deactivate Controller
+
+Seller -> SellerBrowser : Chọn 👍 (+1): "Người mua thanh toán đúng hạn"
+Seller -> SellerBrowser : Nhấn "Gửi"
+
+SellerBrowser -> Controller : POST /orders/{order_id}/review\n{\n  reviewered_id: winner_id,\n  rating: 1,\n  content: "Người mua thanh toán đúng hạn"\n}
+
+activate Controller
+Controller -> ReviewService : submitReview(order_id, seller_id, winner_id, 1, content)
+activate ReviewService
+
+' Same validation and INSERT/UPDATE logic as above
+ReviewService -> ReviewRepo : createOrUpdateReview(...)
+activate ReviewRepo
+ReviewRepo -> DB : INSERT INTO reviews... (or UPDATE)
+activate DB
+DB --> ReviewRepo : review_id
+
+note right of DB
+  Trigger updates users.positive_reviews or
+  users.negative_reviews for winner_id
+end note
+
+deactivate DB
+deactivate ReviewRepo
+
+ReviewService --> Controller : {success: true}
+deactivate ReviewService
+
+Controller -> SellerBrowser : Success message
+deactivate Controller
+
+SellerBrowser -> Seller : "Đã đánh giá người mua"
+
+== Scenario 3: Seller Cancels Transaction (Auto -1 Review) ==
+
+note right of Seller
+  Section 3.5: Seller có thể huỷ giao dịch
+  và tự động -1 người thắng với lý do:
+  "Người thắng không thanh toán"
+end note
+
+Seller -> SellerBrowser : Click "Huỷ giao dịch" trên order
+SellerBrowser -> Controller : POST /orders/{order_id}/cancel
+
+activate Controller
+Controller -> ReviewService : cancelOrderWithAutoReview(seller_id, order_id)
+activate ReviewService
+
+' Update order status
+ReviewService -> OrderRepo : updateOrderStatus(order_id, 'cancelled', reason='Người thắng không thanh toán')
+activate OrderRepo
+OrderRepo -> DB : UPDATE orders\nSET status = 'cancelled',\n    cancellation_reason = 'Người thắng không thanh toán'\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Updated
+deactivate DB
+deactivate OrderRepo
+
+' Auto-create negative review
+ReviewService -> ReviewRepo : createReview(order_id, seller_id, winner_id, rating=-1, content='Người thắng không thanh toán')
+activate ReviewRepo
+ReviewRepo -> DB : INSERT INTO reviews (\n  order_id, reviewer_id, reviewered_id,\n  rating, content, created_at\n) VALUES (\n  :order_id, :seller_id, :winner_id,\n  -1, 'Người thắng không thanh toán', CURRENT_TIMESTAMP\n)
+activate DB
+DB --> ReviewRepo : review_id
+
+note right of DB
+  Trigger auto-increments
+  users.negative_reviews for winner
+end note
+
+deactivate DB
+deactivate ReviewRepo
+
+ReviewService --> Controller : {success: true, order_cancelled: true}
+deactivate ReviewService
+
+Controller -> SellerBrowser : "Đã huỷ giao dịch và đánh giá -1 người mua"
+deactivate Controller
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  
+  **reviews:**
+  - review_id (PK)
+  - order_id (FK → orders)
+  - reviewer_id (FK → users)
+  - reviewered_id (FK → users)
+  - rating: INT, CHECK(rating IN (1, -1))
+  - content: TEXT (nullable)
+  - created_at: TIMESTAMP
+  - updated_at: TIMESTAMP (nullable)
+  - UNIQUE(order_id, reviewer_id, reviewered_id)
+  
+  **users:**
+  - positive_reviews: INT, NOT NULL, DEFAULT 0
+  - negative_reviews: INT, NOT NULL, DEFAULT 0
+  
+  **Triggers:**
+  - update_user_rating_on_review_insert
+  - update_user_rating_on_review_update
+  
+  **Business Rules:**
+  - Can only review after order status = 'completed' or 'cancelled'
+  - Bidder reviews seller, Seller reviews bidder
+  - Rating: +1 (positive) or -1 (negative) only
+  - Can UPDATE review (change rating/content)
+  - Triggers automatically update user rating counters
+  - UNIQUE constraint ensures only 1 review per direction per order
+  
+  **Rating Calculation:**
+  total_reviews = positive_reviews + negative_reviews
+  rating_percentage = (positive_reviews / total_reviews) * 100
+  Used in UC-05 (bidding permission check)
+  
+  **Section 3.5 - Cancel Transaction:**
+  - Seller can cancel anytime during order completion
+  - Auto-creates review with rating=-1
+  - Content: "Người thắng không thanh toán"
+end note
+
+@enduml

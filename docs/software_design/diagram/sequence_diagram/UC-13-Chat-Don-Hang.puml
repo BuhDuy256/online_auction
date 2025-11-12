@@ -1,0 +1,265 @@
+@startuml UC13_ChatDonHang
+' --- Sequence Diagram: Order Chat (Seller ↔ Winner) ---
+' Reference: Section 7 (Chat giữa người bán và người thắng đấu giá)
+' Features: Real-time messaging, chat history, read status
+' Database: order_chat(message_id, order_id, sender_id, receiver_id, content, created_at)
+' Technology: WebSocket for real-time updates
+
+autonumber
+actor "User\n(Seller/Winner)" as User
+participant "Web Browser" as Browser
+participant "WebSocket\nConnection" as WebSocket
+participant "Web Server\n(Controller)" as Controller
+participant "Chat Service" as ChatService
+participant "Chat Repository" as ChatRepo
+participant "Order Repository" as OrderRepo
+participant "Notification Service" as NotificationService
+database "Database" as DB
+
+== Pre-requisite: Open Chat Window ==
+
+User -> Browser : Navigate to order detail page\nClick "Chat với [Seller/Winner]"
+Browser -> Controller : GET /orders/:order_id/chat
+
+activate Controller
+Controller -> Controller : Authenticate user → get user_id
+Controller -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT order_id, seller_id, winner_id, status\nFROM orders\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+' Verify user is participant
+alt user_id != seller_id AND user_id != winner_id
+    Controller --> Browser : HTTP 403 Forbidden
+    Browser -> User : "Bạn không có quyền truy cập chat này"
+else user_id = seller_id OR user_id = winner_id
+    ' Load chat history
+    Controller -> ChatService : getChatHistory(order_id)
+    activate ChatService
+    ChatService -> ChatRepo : findByOrderId(order_id)
+    activate ChatRepo
+    ChatRepo -> DB : SELECT message_id, sender_id, receiver_id,\n  content, created_at,\n  u.full_name as sender_name\nFROM order_chat oc\nJOIN users u ON oc.sender_id = u.user_id\nWHERE oc.order_id = :order_id\nORDER BY oc.created_at ASC
+    activate DB
+    DB --> ChatRepo : List of messages
+    deactivate DB
+    deactivate ChatRepo
+    ChatService --> Controller : Chat history
+    deactivate ChatService
+    
+    Controller -> Browser : Render chat page with history
+    deactivate Controller
+    
+    ' Establish WebSocket connection
+    Browser -> WebSocket : Connect to ws://server/chat/:order_id\nwith auth token
+    activate WebSocket
+    WebSocket -> WebSocket : Authenticate user\nJoin room: "order_{order_id}"
+    WebSocket --> Browser : Connection established
+    
+    Browser -> User : Display chat interface:\n- Message history\n- Input box\n- Online status indicator
+end
+
+== Main Flow: Send Message ==
+
+User -> Browser : Type message, press Send
+Browser -> Browser : Validate: message not empty, length <= 1000 chars
+
+Browser -> Controller : POST /orders/:order_id/chat\n{content: "Message text"}
+activate Controller
+Controller -> Controller : Authenticate user → get sender_id
+Controller -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT seller_id, winner_id FROM orders\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+' Determine receiver
+Controller -> Controller : Determine receiver_id:\nIF sender_id = seller_id THEN receiver_id = winner_id\nELSE receiver_id = seller_id
+
+Controller -> ChatService : sendMessage(order_id, sender_id, receiver_id, content)
+activate ChatService
+
+' Save message to database
+ChatService -> ChatRepo : saveMessage(order_id, sender_id, receiver_id, content)
+activate ChatRepo
+ChatRepo -> DB : INSERT INTO order_chat\n(order_id, sender_id, receiver_id, content, created_at)\nVALUES (:order_id, :sender_id, :receiver_id, :content, CURRENT_TIMESTAMP)\nRETURNING message_id, created_at
+activate DB
+DB --> ChatRepo : message_id, created_at
+deactivate DB
+deactivate ChatRepo
+
+ChatService --> Controller : Message saved:\n{message_id, sender_id, content, created_at}
+deactivate ChatService
+
+Controller --> Browser : HTTP 201 Created\n{message_id, created_at}
+deactivate Controller
+
+' Broadcast via WebSocket to both users
+Controller -> WebSocket : Emit "new_message" event to room "order_{order_id}"
+activate WebSocket
+WebSocket -> Browser : Push message to sender:\n{message_id, sender_id, content, created_at}
+WebSocket -> Browser : Push message to receiver:\n{message_id, sender_id, content, created_at}
+note right
+  Real-time delivery:
+  - Sender sees message immediately (local echo)
+  - Receiver gets push notification
+  - Update chat UI without page refresh
+end note
+deactivate WebSocket
+
+Browser -> User : Display message in chat:\n[10:30] You: Message text
+
+' Notify receiver if offline
+alt receiver is offline (not connected to WebSocket)
+    Controller -> NotificationService : createNotification(receiver_id, 'new_chat_message', order_id)
+    activate NotificationService
+    NotificationService -> DB : INSERT INTO notifications\n(user_id, type, content, action_url, created_at)\nVALUES (:receiver_id, 'new_chat_message',\n'Có tin nhắn mới từ [Sender]', '/orders/:order_id/chat', CURRENT_TIMESTAMP)
+    activate DB
+    DB --> NotificationService : notification_id
+    deactivate DB
+    
+    NotificationService -> NotificationService : Send email:\n"Bạn có tin nhắn mới về đơn hàng #:order_id"
+    deactivate NotificationService
+end
+
+== Alternative Flow: Receive Message (Real-time) ==
+
+note right of Browser
+  **Receiver's Browser (connected via WebSocket):**
+end note
+
+WebSocket -> Browser : Event "new_message" received
+activate Browser
+Browser -> Browser : Parse message data:\n{message_id, sender_id, content, created_at}
+
+alt Sender is the other party (not current user)
+    Browser -> Browser : Append message to chat UI:\n[10:31] [Sender Name]: Message text
+    
+    Browser -> Browser : Show notification badge/sound
+    
+    Browser -> User : Display new message
+    
+    ' Mark as read (optional)
+    Browser -> Controller : POST /orders/:order_id/chat/:message_id/read
+    activate Controller
+    Controller -> ChatService : markAsRead(message_id, user_id)
+    note right
+      Optional: Track read status
+      (requires additional column in order_chat
+      or separate read_receipts table)
+    end note
+    deactivate Controller
+end
+deactivate Browser
+
+== Alternative Flow: Load More History (Pagination) ==
+
+User -> Browser : Scroll to top of chat (load older messages)
+Browser -> Controller : GET /orders/:order_id/chat?before=:message_id&limit=20
+
+activate Controller
+Controller -> ChatService : getChatHistory(order_id, before_message_id, limit=20)
+activate ChatService
+ChatService -> ChatRepo : findByOrderId(order_id, before_message_id, limit)
+activate ChatRepo
+ChatRepo -> DB : SELECT * FROM order_chat\nWHERE order_id = :order_id\n  AND message_id < :before_message_id\nORDER BY created_at DESC\nLIMIT 20
+activate DB
+DB --> ChatRepo : Older messages
+deactivate DB
+deactivate ChatRepo
+ChatService --> Controller : Chat history
+deactivate ChatService
+Controller -> Browser : Return messages (oldest first)
+deactivate Controller
+
+Browser -> Browser : Prepend messages to chat UI
+Browser -> User : Display older messages
+
+== Alternative Flow: Chat Restrictions ==
+
+note right of User
+  **Business Rules for Chat:**
+  
+  1. **When can chat?**
+     - After auction ends (order created)
+     - Until order status = 'completed' or 'cancelled'
+     - Typically: payment → ship → receipt phase
+  
+  2. **Who can chat?**
+     - Only seller_id and winner_id
+     - Admin cannot view (privacy)
+  
+  3. **What to chat about?**
+     - Shipping address confirmation
+     - Payment details
+     - Tracking information
+     - Delivery issues
+     - Product condition questions
+  
+  4. **Moderation:**
+     - Optional: Bad word filter
+     - Report inappropriate messages
+     - Chat log saved permanently (audit trail)
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Table:**
+  - order_chat(message_id, order_id, sender_id, receiver_id,
+    content, created_at)
+    * No deleted/edited messages (immutable log)
+    * Index: (order_id, created_at ASC) for history
+    * Index: (receiver_id, created_at DESC) for unread
+  
+  **Technology Stack:**
+  - WebSocket: Socket.IO or native WebSocket
+  - Room: "order_{order_id}" for targeted broadcasting
+  - Fallback: HTTP polling if WebSocket unavailable
+  
+  **Features:**
+  - ✅ Real-time messaging
+  - ✅ Chat history persistence
+  - ✅ Offline notification (email + in-app)
+  - ✅ Online status indicator
+  - ✅ Message timestamps
+  - ⚠️ Read receipts (optional, needs schema change)
+  - ⚠️ Typing indicator (optional, ephemeral)
+  - ⚠️ File attachments (optional, separate table)
+  
+  **Security:**
+  - Authenticate WebSocket connection (JWT in handshake)
+  - Verify user is order participant before sending
+  - Rate limit: Max 10 messages per minute per user
+  - Sanitize HTML in message content (prevent XSS)
+  
+  **UI/UX:**
+  - Chat bubble design (left: other, right: me)
+  - Auto-scroll to latest message
+  - "User is typing..." indicator
+  - Sound notification for new messages
+  - Unread badge count
+  
+  **Alternative Implementation:**
+  - If no WebSocket: AJAX polling every 5 seconds
+  - If complex: Use existing chat service (Twilio, SendBird)
+  
+  **Privacy:**
+  - Messages deleted after order completed + 90 days?
+  - Or keep permanently for dispute resolution
+  - Admin cannot view unless reported
+  
+  **Integration with UC-12:**
+  - Chat button appears in order detail page
+  - Used during all 4 steps: payment → ship → receipt → review
+  - Especially important for:
+    * Step 1: Confirm payment method
+    * Step 2: Share tracking code
+    * Step 3: Confirm delivery
+end note
+
+@enduml

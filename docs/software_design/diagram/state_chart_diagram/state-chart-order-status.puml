@@ -1,0 +1,160 @@
+@startuml StateChartOrderStatus
+' --- State Chart Diagram: Order Status Flow ---
+' Reference: Section 7 (Order Completion Process)
+' Database: orders.status ENUM
+' Related: UC-12 (Hoàn tất đơn hàng)
+
+[*] --> Pending : Auction ends\n(Winner declared)
+
+state "Pending" as Pending #LightYellow
+note right of Pending
+  **Initial State:**
+  - Order created automatically after auction ends
+  - Winner must provide payment info
+  - Seller awaits payment confirmation
+  
+  **Data:**
+  - final_price = winning bid
+  - winner_id, seller_id assigned
+  - created_at = auction end time
+end note
+
+Pending --> PaymentConfirmed : Winner submits\npayment proof +\nshipping address
+note on link
+  UC-12 Step 1:
+  - Upload payment proof image
+  - Fill shipping address
+  - Update invoice table
+end note
+
+state "Payment Confirmed" as PaymentConfirmed #LightBlue
+note right of PaymentConfirmed
+  **Waiting for Shipment:**
+  - Seller verifies payment
+  - Seller prepares product for shipping
+  - Chat available for coordination
+end note
+
+PaymentConfirmed --> Shipped : Seller provides\nshipping tracking code
+note on link
+  UC-12 Step 2:
+  - Seller inputs tracking number
+  - Email sent to winner
+  - Estimated delivery time
+end note
+
+state "Shipped" as Shipped #LightCyan
+note right of Shipped
+  **In Transit:**
+  - Product on the way to winner
+  - Winner can track shipment
+  - Chat for delivery issues
+end note
+
+Shipped --> Completed : Winner confirms\nreceipt
+note on link
+  UC-12 Step 3:
+  - Winner clicks "Đã nhận hàng"
+  - Triggers review flow
+  - Final status reached
+end note
+
+state "Completed" as Completed #LightGreen
+note right of Completed
+  **Success End State:**
+  - Transaction finished successfully
+  - Both parties can review (UC-11)
+  - Money released to seller
+  - Product ownership transferred
+  
+  **Next Steps:**
+  - Mutual reviews (UC-11 Step 4)
+  - Order archived after 90 days
+end note
+
+Completed --> [*]
+
+' === Cancellation Flow ===
+
+Pending --> Cancelled : Seller cancels\n(any reason)
+PaymentConfirmed --> Cancelled : Seller cancels
+Shipped --> Cancelled : Seller cancels\n(before delivery)
+
+note on link
+  Section 7: Seller can cancel anytime
+  - Auto create negative review (-1)
+  - Refund to winner (if paid)
+  - Product returns to seller
+end note
+
+state "Cancelled" as Cancelled #LightCoral
+note right of Cancelled
+  **Cancellation End State:**
+  - Seller decided not to complete
+  - Automatic negative review for seller
+  - Winner gets refund (if applicable)
+  - Order marked as cancelled
+  
+  **Reasons (stored in cancellation_reason):**
+  - Product damaged
+  - Out of stock
+  - Pricing error
+  - Winner unresponsive
+  - Dispute/conflict
+end note
+
+Cancelled --> [*]
+
+' === Alternative Flow: Winner No-Show ===
+
+Pending --> Cancelled : 7 days timeout\n(Winner no response)
+note on link
+  Auto-cancellation:
+  - Winner doesn't submit payment
+  - After 7 days → auto cancel
+  - Negative review for winner
+end note
+
+' === Database State Mapping ===
+
+note bottom
+  **Database Enum Mapping:**
+  orders.status ENUM(
+    'pending',           → Pending
+    'payment_confirmed', → Payment Confirmed
+    'shipped',           → Shipped
+    'completed',         → Completed
+    'cancelled'          → Cancelled
+  )
+  
+  **Status Transitions (allowed):**
+  pending → payment_confirmed → shipped → completed
+  pending → cancelled
+  payment_confirmed → cancelled
+  shipped → cancelled (before delivery)
+  
+  **Status Transitions (NOT allowed):**
+  ❌ completed → cancelled (final state)
+  ❌ cancelled → any other state (final state)
+  ❌ shipped → pending (backward not allowed)
+  
+  **Business Rules:**
+  - Only winner can confirm payment (pending → payment_confirmed)
+  - Only seller can add tracking (payment_confirmed → shipped)
+  - Only winner can confirm receipt (shipped → completed)
+  - Only seller can cancel (any → cancelled)
+  - System auto-cancels if winner no-show after 7 days
+  
+  **Related Use Cases:**
+  - UC-12: Hoàn tất đơn hàng (all transitions)
+  - UC-11: Đánh giá người dùng (triggered on completed/cancelled)
+  - UC-13: Chat đơn hàng (active during pending → shipped)
+  
+  **Notifications:**
+  - pending → payment_confirmed: Notify seller
+  - payment_confirmed → shipped: Notify winner
+  - shipped → completed: Notify both (trigger reviews)
+  - any → cancelled: Notify both + auto review
+end note
+
+@enduml

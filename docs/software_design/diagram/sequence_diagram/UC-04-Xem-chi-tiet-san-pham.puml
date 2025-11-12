@@ -1,0 +1,218 @@
+@startuml UC04_XemChiTietSanPham
+' --- Sequence Diagram: View Product Details ---
+' Reference: Section 2.5 (Xem thông tin chi tiết sản phẩm đấu giá)
+' Features: Product info, images, descriptions, bid history (masked), comments, related products
+' Database: products, product_images, product_descriptions, bids, product_comments, categories, users
+
+autonumber
+actor User as "User\n(Guest/Bidder/Seller)"
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Product Service" as ProductService
+participant "Product Repository" as ProductRepo
+participant "Comment Repository" as CommentRepo
+participant "Bid Repository" as BidRepo
+database "Database" as DB
+
+== Main Flow: View Product Details ==
+
+User -> Browser : Click on product (from search/home)
+Browser -> Controller : GET /products/:product_id
+
+activate Controller
+Controller -> ProductService : getProductDetails(product_id, current_user_id)
+activate ProductService
+
+' Step 1: Get main product info
+ProductService -> ProductRepo : getProduct(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT p.*, c.name as category_name, c.parent_id,\n  u.full_name as seller_name,\n  u.positive_reviews, u.negative_reviews,\n  u.user_id as seller_id\nFROM products p\nJOIN categories c ON p.category_id = c.category_id\nJOIN users u ON p.seller_id = u.user_id\nWHERE p.product_id = :product_id
+activate DB
+DB --> ProductRepo : Product with seller info
+deactivate DB
+deactivate ProductRepo
+
+alt Product not found
+    ProductService --> Controller : Error: "Product not found"
+    Controller -> Browser : HTTP 404 - Redirect to /404
+    Browser -> User : Display: "Sản phẩm không tồn tại"
+end
+
+' Step 2: Get all product images
+ProductService -> ProductRepo : getProductImages(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT image_id, image_url\nFROM product_images\nWHERE product_id = :product_id\nORDER BY image_id ASC
+note right
+  First image = thumbnail
+  Display as gallery/carousel
+end note
+activate DB
+DB --> ProductRepo : List of image URLs
+deactivate DB
+deactivate ProductRepo
+
+' Step 3: Get all product descriptions (append-only versions)
+ProductService -> ProductRepo : getProductDescriptions(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT version, description, created_at\nFROM product_descriptions\nWHERE product_id = :product_id\nORDER BY version ASC
+note right
+  Display all versions chronologically:
+  Version 1: Original description
+  Version 2: [Updated on 2024-11-10] Additional info...
+  Version 3: [Updated on 2024-11-11] More updates...
+end note
+activate DB
+DB --> ProductRepo : List of descriptions with versions
+deactivate DB
+deactivate ProductRepo
+
+' Step 4: Get bid history with MASKED bidder names (Section 2.6)
+ProductService -> BidRepo : getBidHistory(product_id, current_user_id)
+activate BidRepo
+BidRepo -> DB : SELECT b.bid_id, b.amount, b.created_at,\n  CASE\n    WHEN b.bidder_id = :current_user_id THEN u.full_name\n    WHEN b.bidder_id = p.seller_id THEN u.full_name\n    ELSE CONCAT(LEFT(u.full_name, 1), '***')  -- Mask: "N***"\n  END as bidder_display_name,\n  b.is_auto\nFROM bids b\nJOIN users u ON b.bidder_id = u.user_id\nJOIN products p ON b.product_id = p.product_id\nWHERE b.product_id = :product_id\nORDER BY b.amount DESC, b.created_at ASC\nLIMIT 20
+note right
+  **Masking Rules (Section 2.6):**
+  - Current user sees own name
+  - Seller sees all bidder names
+  - Others see masked: "N***", "T***"
+  
+  **Display:**
+  Amount | Bidder | Time | Auto
+  150,000đ | N*** | 10:30 | ✓
+  140,000đ | Nguyen Van A | 10:25 | 
+end note
+activate DB
+DB --> BidRepo : Bid history with masked names
+deactivate DB
+deactivate BidRepo
+
+' Step 5: Get comments/Q&A (nested structure)
+ProductService -> CommentRepo : getCommentTree(product_id)
+activate CommentRepo
+CommentRepo -> DB : WITH RECURSIVE comment_tree AS (\n  SELECT *, 0 as level, ARRAY[comment_id] as path\n  FROM product_comments\n  WHERE product_id = :product_id AND parent_id IS NULL\n  \n  UNION ALL\n  \n  SELECT c.*, ct.level + 1, ct.path || c.comment_id\n  FROM product_comments c\n  JOIN comment_tree ct ON c.parent_id = ct.comment_id\n)\nSELECT ct.*, u.full_name as author_name\nFROM comment_tree ct\nJOIN users u ON ct.user_id = u.user_id\nORDER BY ct.path
+note right
+  Display nested comments:
+  
+  📝 User A: "Sản phẩm còn hàng không?"
+      └─ 💬 Seller: "Còn hàng bạn nhé"
+      └─ 💬 User A: "Cảm ơn!"
+  
+  📝 User B: "Có ship COD không?"
+      └─ 💬 Seller: "Có ạ"
+end note
+activate DB
+DB --> CommentRepo : Nested comment tree
+deactivate DB
+deactivate CommentRepo
+
+' Step 6: Get 5 related products from same category (Section 2.5)
+ProductService -> ProductRepo : getRelatedProducts(category_id, product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT p.product_id, p.name, p.thumbnail_url,\n  p.current_price, p.end_time, p.bid_count\nFROM products p\nWHERE p.category_id = :category_id\n  AND p.product_id != :product_id\n  AND p.status = 'active'\n  AND p.end_time > CURRENT_TIMESTAMP\nORDER BY p.bid_count DESC, p.created_at DESC\nLIMIT 5
+note right
+  Section 2.5: Show 5 related products
+  from same category
+  
+  Priority: Most bidded first
+end note
+activate DB
+DB --> ProductRepo : List of 5 related products
+deactivate DB
+deactivate ProductRepo
+
+' Step 7: Check if user has this product in watchlist
+alt current_user_id is not null (logged in)
+    ProductService -> ProductRepo : isInWatchlist(current_user_id, product_id)
+    activate ProductRepo
+    ProductRepo -> DB : SELECT 1 FROM watchlist\nWHERE user_id = :current_user_id\n  AND product_id = :product_id
+    activate DB
+    DB --> ProductRepo : Boolean (true/false)
+    deactivate DB
+    deactivate ProductRepo
+end
+
+' Step 8: Calculate seller rating percentage
+ProductService -> ProductService : Calculate seller_rating:\n(positive_reviews / (positive_reviews + negative_reviews)) * 100
+
+ProductService --> Controller : ProductDetailsDTO:\n- Product info (name, price, time remaining)\n- Images array\n- Descriptions array (versions)\n- Bid history (masked)\n- Comment tree\n- Related products (5)\n- Seller info with rating\n- is_in_watchlist flag
+deactivate ProductService
+
+Controller -> Browser : Render product detail page with all data
+deactivate Controller
+
+Browser -> User : Display comprehensive product page
+
+== Display Sections ==
+
+note right of Browser
+  **Product Detail Page Layout:**
+  
+  1. **Image Gallery** (left)
+     - Main image (large)
+     - Thumbnails (3+ images)
+  
+  2. **Product Info** (right)
+     - Name, Category
+     - Current Price: 150,000đ
+     - Time Remaining: 2h 30m
+     - Bid Count: 15 lượt
+     - Buy Now: 200,000đ (if available)
+     - [Đặt giá] [Mua ngay] [Thêm watchlist]
+  
+  3. **Seller Info** (sidebar)
+     - Name: Nguyen Van A
+     - Rating: 85% (20👍 / 4👎)
+     - [Xem trang người bán]
+  
+  4. **Description Tab** (below)
+     - Version 1 (11/01/2024): Original description...
+     - Version 2 (11/05/2024): Cập nhật thêm...
+  
+  5. **Bid History Tab**
+     Amount | Bidder | Time | Auto
+     150,000đ | N*** | 10:30 | ✓
+     140,000đ | T*** | 10:25 |
+  
+  6. **Comments/Q&A Tab**
+     Nested comments with reply button
+  
+  7. **Related Products** (bottom)
+     Grid of 5 similar products
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - products(product_id, name, category_id, seller_id,
+    current_price, buy_now_price, end_time, bid_count, status)
+  - product_images(image_id, product_id, image_url)
+  - product_descriptions(product_id, version, description, created_at)
+    * Append-only: UNIQUE(product_id, version)
+  - bids(bid_id, product_id, bidder_id, amount, is_auto, created_at)
+  - product_comments(comment_id, product_id, user_id,
+    content, parent_id, created_at)
+  - watchlist(user_id, product_id) - Composite PK
+  - categories(category_id, name, parent_id)
+  - users(user_id, full_name, positive_reviews, negative_reviews)
+  
+  **Business Rules (Section 2.5, 2.6):**
+  - Show all product description versions (append-only)
+  - Mask bidder names except current user and seller
+  - Display 5 related products from same category
+  - Calculate seller rating: positive / (positive + negative)
+  - Show nested comments (recursive query)
+  
+  **Performance Optimization:**
+  - Index: (product_id) on product_images, bids, product_comments
+  - Index: (category_id, status, end_time) on products
+  - Cache product details for 5 minutes
+  - Lazy load bid history and comments (AJAX)
+  
+  **Real-time Updates:**
+  - WebSocket connection for live bid updates
+  - Auto-refresh countdown timer
+  - Toast notification: "Có giá mới: 160,000đ"
+end note
+
+@enduml

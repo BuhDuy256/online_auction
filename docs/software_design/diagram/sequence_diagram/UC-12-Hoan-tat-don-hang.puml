@@ -1,0 +1,431 @@
+@startuml UC12_HoanTatDonHang
+' --- Sequence Diagram: Hoàn tất đơn hàng (4 bước) ---
+' Database Schema: orders, invoices, order_chat (see UC-13), reviews (see UC-11)
+' Reference: Section 7 (Project Description)
+' Features: 4-step process, seller can cancel anytime, mutual reviews, integrated chat (UC-13)
+
+autonumber
+actor Winner as "Người thắng\n(Winner/Bidder)"
+actor Seller
+participant "Winner Browser" as WinnerBrowser
+participant "Seller Browser" as SellerBrowser
+participant "Web Server\n(Controller)" as Controller
+participant "Order Service" as OrderService
+participant "Order Repository" as OrderRepo
+participant "Invoice Repository" as InvoiceRepo
+participant "Review Service" as ReviewService
+participant "Email Service" as EmailService
+participant "Notification Service" as NotificationService
+database "Database" as DB
+
+== Prerequisite: Auction Ends & Order Created ==
+
+note over DB
+  **After auction ends:**
+  - IF final_price >= reserve_price (if set)
+  - Create order automatically:
+    INSERT INTO orders (product_id, winner_id, seller_id,
+      final_price, status, created_at)
+    VALUES (..., 'pending', CURRENT_TIMESTAMP)
+  - Create invoice (1:1 relationship):
+    INSERT INTO invoices (order_id, created_at)
+    VALUES (:order_id, CURRENT_TIMESTAMP)
+  - Update product.status = 'sold'
+end note
+
+== Step 1: Winner Provides Payment Info & Shipping Address ==
+
+Winner -> WinnerBrowser : Truy cập order detail page
+WinnerBrowser -> Controller : GET /orders/{order_id}
+
+activate Controller
+Controller -> OrderService : getOrderDetails(order_id, user_id)
+activate OrderService
+
+OrderService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT o.*, i.shipping_address, i.payment_proof_url,\n  i.shipping_tracking_code, p.name as product_name\nFROM orders o\nJOIN invoices i ON o.order_id = i.order_id\nJOIN products p ON o.product_id = p.product_id\nWHERE o.order_id = :order_id
+activate DB
+DB --> OrderRepo : Order + Invoice details
+deactivate DB
+deactivate OrderRepo
+
+alt user_id NOT IN (winner_id, seller_id)
+    OrderService --> Controller : Error: "Unauthorized"
+    Controller -> WinnerBrowser : Redirect to product detail (read-only view)
+    note right
+      Section 7: Người dùng khác chỉ thấy
+      "Sản phẩm đã kết thúc"
+    end note
+end
+
+OrderService --> Controller : {order: {...}, invoice: {...}, status: 'pending'}
+deactivate OrderService
+
+Controller -> WinnerBrowser : Render order completion page\nStatus: "Bước 1/4: Cung cấp thông tin thanh toán"
+deactivate Controller
+
+Winner -> WinnerBrowser : Nhập:\n- Địa chỉ giao hàng\n- Upload ảnh chứng từ thanh toán
+Winner -> WinnerBrowser : Nhấn "Xác nhận đã thanh toán"
+
+WinnerBrowser -> Controller : POST /orders/{order_id}/payment-confirmation\nContent-Type: multipart/form-data\n{\n  shipping_address: "123 Nguyen Hue, Q1, TPHCM",\n  payment_proof: file\n}
+
+activate Controller
+Controller -> OrderService : confirmPayment(order_id, winner_id, shipping_address, payment_proof_file)
+activate OrderService
+
+' Validate authorization
+OrderService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT winner_id, status FROM orders WHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.winner_id != winner_id
+    OrderService --> Controller : Error: "Unauthorized"
+end
+
+alt order.status NOT IN ('pending', 'payment_confirmed')
+    OrderService --> Controller : Error: "Invalid order status"
+end
+
+' Upload payment proof image
+OrderService -> OrderService : Upload payment_proof_file to cloud storage
+OrderService -> OrderService : payment_proof_url = upload_result.url
+
+' Update invoice
+OrderService -> InvoiceRepo : updateInvoice(order_id, shipping_address, payment_proof_url)
+activate InvoiceRepo
+InvoiceRepo -> DB : UPDATE invoices\nSET shipping_address = :shipping_address,\n    payment_proof_url = :payment_proof_url,\n    updated_at = CURRENT_TIMESTAMP\nWHERE order_id = :order_id
+activate DB
+DB --> InvoiceRepo : Updated
+deactivate DB
+deactivate InvoiceRepo
+
+' Update order status
+OrderService -> OrderRepo : updateOrderStatus(order_id, 'payment_confirmed')
+activate OrderRepo
+OrderRepo -> DB : UPDATE orders\nSET status = 'payment_confirmed'\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Updated
+deactivate DB
+deactivate OrderRepo
+
+' Notify seller
+OrderService -> EmailService : notifySeller(order_id, "Người mua đã thanh toán")
+activate EmailService
+EmailService --> OrderService : Sent
+deactivate EmailService
+
+OrderService -> NotificationService : createNotification(seller_id, 'payment_received')
+activate NotificationService
+NotificationService -> DB : INSERT INTO notifications...
+activate DB
+DB --> NotificationService : notification_id
+deactivate DB
+deactivate NotificationService
+
+OrderService --> Controller : {success: true, new_status: 'payment_confirmed'}
+deactivate OrderService
+
+Controller -> WinnerBrowser : Success\nStatus: "Bước 2/4: Chờ người bán gửi hàng"
+deactivate Controller
+
+== Step 2: Seller Confirms & Ships Product ==
+
+Seller -> SellerBrowser : Truy cập order detail page
+SellerBrowser -> Controller : GET /orders/{order_id}
+
+activate Controller
+Controller -> OrderService : getOrderDetails(order_id, seller_id)
+activate OrderService
+OrderService -> OrderRepo : getOrder(order_id) with invoice
+activate OrderRepo
+OrderRepo -> DB : SELECT o.*, i.* FROM orders o JOIN invoices i...
+activate DB
+DB --> OrderRepo : Order details (status='payment_confirmed')
+deactivate DB
+deactivate OrderRepo
+
+OrderService --> Controller : {order: {...}, invoice: {...}}
+deactivate OrderService
+
+Controller -> SellerBrowser : Hiển thị:\n- Địa chỉ giao hàng\n- Chứng từ thanh toán\n- Form nhập mã vận đơn
+deactivate Controller
+
+Seller -> SellerBrowser : Xác nhận đã nhận tiền\nNhập mã vận đơn: "VN123456789"
+Seller -> SellerBrowser : Nhấn "Đã gửi hàng"
+
+SellerBrowser -> Controller : POST /orders/{order_id}/ship\n{shipping_tracking_code: "VN123456789"}
+
+activate Controller
+Controller -> OrderService : confirmShipment(order_id, seller_id, tracking_code)
+activate OrderService
+
+' Validate
+OrderService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT seller_id, status FROM orders WHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.seller_id != seller_id OR status != 'payment_confirmed'
+    OrderService --> Controller : Error: "Invalid operation"
+end
+
+' Update invoice with tracking code
+OrderService -> InvoiceRepo : updateTrackingCode(order_id, tracking_code)
+activate InvoiceRepo
+InvoiceRepo -> DB : UPDATE invoices\nSET shipping_tracking_code = :tracking_code,\n    updated_at = CURRENT_TIMESTAMP\nWHERE order_id = :order_id
+activate DB
+DB --> InvoiceRepo : Updated
+deactivate DB
+deactivate InvoiceRepo
+
+' Update order status
+OrderService -> OrderRepo : updateOrderStatus(order_id, 'shipped')
+activate OrderRepo
+OrderRepo -> DB : UPDATE orders\nSET status = 'shipped'\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Updated
+deactivate DB
+deactivate OrderRepo
+
+' Notify winner
+OrderService -> EmailService : notifyWinner(order_id, "Đơn hàng đã được gửi")
+activate EmailService
+EmailService --> OrderService : Sent
+deactivate EmailService
+
+OrderService --> Controller : {success: true, new_status: 'shipped'}
+deactivate OrderService
+
+Controller -> SellerBrowser : Success\nStatus: "Bước 3/4: Chờ người mua nhận hàng"
+deactivate Controller
+
+== Step 3: Winner Confirms Receipt ==
+
+Winner -> WinnerBrowser : Nhận hàng, kiểm tra sản phẩm
+Winner -> WinnerBrowser : Click "Đã nhận hàng"
+
+WinnerBrowser -> Controller : POST /orders/{order_id}/confirm-receipt
+
+activate Controller
+Controller -> OrderService : confirmReceipt(order_id, winner_id)
+activate OrderService
+
+' Validate
+OrderService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT winner_id, status FROM orders WHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.winner_id != winner_id OR status != 'shipped'
+    OrderService --> Controller : Error: "Invalid operation"
+end
+
+' Update order status to completed
+OrderService -> OrderRepo : updateOrderStatus(order_id, 'completed')
+activate OrderRepo
+OrderRepo -> DB : UPDATE orders\nSET status = 'completed'\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Updated
+deactivate DB
+deactivate OrderRepo
+
+' Notify seller
+OrderService -> EmailService : notifySeller(order_id, "Người mua đã nhận hàng")
+activate EmailService
+EmailService --> OrderService : Sent
+deactivate EmailService
+
+OrderService --> Controller : {success: true, new_status: 'completed'}
+deactivate OrderService
+
+Controller -> WinnerBrowser : Success\nStatus: "Bước 4/4: Đánh giá giao dịch"
+deactivate Controller
+
+== Step 4: Mutual Reviews (See UC-11) ==
+
+note over Winner, Seller
+  **Section 7 - Step 4:**
+  Cả người mua và người bán đánh giá nhau
+  - Rating: +1 hoặc -1
+  - Nhận xét ngắn (optional)
+  - Có thể thay đổi đánh giá sau (Section 2.5, 3.5)
+  
+  Chi tiết xem UC-11-Danh-gia-nguoi-dung.puml
+end note
+
+Winner -> WinnerBrowser : Click "Đánh giá người bán"
+WinnerBrowser -> Controller : POST /orders/{order_id}/review (See UC-11)
+
+Seller -> SellerBrowser : Click "Đánh giá người mua"
+SellerBrowser -> Controller : POST /orders/{order_id}/review (See UC-11)
+
+== Alternative Flow: Order Chat (Section 7) ==
+
+note over Winner, Seller
+  **Section 7: Giao diện chat thân thiện**
+  
+  Luôn khả dụng trong suốt quá trình hoàn tất đơn hàng
+  để trao đổi thông tin cần thiết:
+  - Bước 1: Xác nhận phương thức thanh toán
+  - Bước 2: Trao đổi mã vận đơn
+  - Bước 3: Xác nhận giao hàng
+  - Bước 4: Thảo luận trước khi đánh giá
+  
+  ⚠️ **Chi tiết đầy đủ xem UC-13: Chat Đơn Hàng**
+  - Real-time messaging (WebSocket)
+  - Chat history persistence
+  - Offline notifications
+  - Message validation & security
+end note
+
+Winner -> WinnerBrowser : Click "Chat với người bán"
+WinnerBrowser -> WinnerBrowser : Open chat window (see UC-13)
+
+note right of WinnerBrowser
+  Chat interface allows:
+  - Send/receive messages in real-time
+  - View chat history
+  - Attach images (optional)
+  - Online status indicator
+  
+  Database: order_chat table
+  See UC-13 for complete flow
+end note
+
+== Alternative Flow: Seller Cancels Transaction (Section 7) ==
+
+note over Seller
+  **Section 7:**
+  Trong quá trình hoàn tất đơn hàng,
+  người bán có thể cancel giao dịch
+  bất kỳ lúc nào và đánh giá -1 cho người thắng
+  
+  Ví dụ: Yêu cầu thanh toán trong 24h
+  nhưng người mua không đáp ứng
+end note
+
+Seller -> SellerBrowser : Click "Huỷ giao dịch"
+SellerBrowser -> Controller : POST /orders/{order_id}/cancel\n{reason: "Người mua không thanh toán trong 24h"}
+
+activate Controller
+Controller -> OrderService : cancelOrder(order_id, seller_id, reason)
+activate OrderService
+
+' Validate
+OrderService -> OrderRepo : getOrder(order_id)
+activate OrderRepo
+OrderRepo -> DB : SELECT order_id, seller_id, winner_id, status FROM orders\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Order details
+deactivate DB
+deactivate OrderRepo
+
+alt order.seller_id != seller_id
+    OrderService --> Controller : Error: "Unauthorized"
+end
+
+alt order.status = 'completed'
+    OrderService --> Controller : Error: "Cannot cancel completed order"
+end
+
+' Update order status
+OrderService -> OrderRepo : updateOrderStatus(order_id, 'cancelled', reason)
+activate OrderRepo
+OrderRepo -> DB : UPDATE orders\nSET status = 'cancelled',\n    cancellation_reason = :reason\nWHERE order_id = :order_id
+activate DB
+DB --> OrderRepo : Updated
+deactivate DB
+deactivate OrderRepo
+
+' Auto-create negative review (See UC-11 Scenario 3)
+OrderService -> ReviewService : createAutoNegativeReview(order_id, seller_id, winner_id, reason)
+activate ReviewService
+ReviewService -> DB : INSERT INTO reviews (\n  order_id, reviewer_id, reviewered_id,\n  rating, content, created_at\n) VALUES (\n  :order_id, :seller_id, :winner_id,\n  -1, :reason, CURRENT_TIMESTAMP\n)
+activate DB
+DB --> ReviewService : review_id
+
+note right of DB
+  Trigger updates users.negative_reviews for winner
+end note
+
+deactivate DB
+deactivate ReviewService
+
+' Notify winner
+OrderService -> EmailService : notifyWinner(order_id, "Giao dịch bị huỷ: " + reason)
+activate EmailService
+EmailService --> OrderService : Sent
+deactivate EmailService
+
+OrderService --> Controller : {success: true, status: 'cancelled'}
+deactivate OrderService
+
+Controller -> SellerBrowser : "Đã huỷ giao dịch và đánh giá -1 người mua"
+deactivate Controller
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  
+  **orders:**
+  - order_id (PK)
+  - product_id (FK, UNIQUE - 1 order per product)
+  - winner_id (FK → users)
+  - seller_id (FK → users)
+  - final_price (DECIMAL)
+  - status: ENUM('pending', 'payment_confirmed', 
+    'shipped', 'completed', 'cancelled')
+  - cancellation_reason (TEXT, nullable)
+  - created_at (TIMESTAMP)
+  
+  **invoices (1:1 with orders):**
+  - invoice_id (PK)
+  - order_id (FK → orders, UNIQUE)
+  - shipping_address (TEXT, nullable)
+  - payment_proof_url (VARCHAR, nullable)
+  - shipping_tracking_code (VARCHAR, nullable)
+  - created_at, updated_at (TIMESTAMP)
+  
+  **order_chat:** (See UC-13 for details)
+  - message_id (PK)
+  - order_id (FK → orders)
+  - sender_id, receiver_id (FK → users)
+  - content (TEXT), created_at (TIMESTAMP)
+  
+  **reviews:** (See UC-11)
+  
+  **Order Status Flow:**
+  pending → payment_confirmed → shipped → completed
+         ↓ (cancel anytime)
+       cancelled
+  
+  **Section 7 - 4 Steps:**
+  1. Winner provides payment proof + shipping address
+  2. Seller confirms receipt & ships (tracking code)
+  3. Winner confirms receipt
+  4. Both parties review each other
+  
+  **Features:**
+  - Chat available throughout process (UC-13)
+  - Seller can cancel anytime → auto -1 review
+  - Reviews can be updated later (UC-11)
+  - Other users only see "Sản phẩm đã kết thúc"
+  
+  **Related Use Cases:**
+  - UC-11: Đánh giá người dùng (mutual reviews)
+  - UC-13: Chat đơn hàng (seller ↔ winner messaging)
+end note
+
+@enduml

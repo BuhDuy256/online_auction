@@ -1,0 +1,133 @@
+@startuml UC03_TimKiemSanPham
+' --- Sequence Diagram: Tìm kiếm sản phẩm ---
+' Database Schema: products (fts tsvector), categories, system_settings
+' Reference: Section 1.4 (Project Description)
+' Features: Full-text search, category filter, sorting, pagination, highlight new products
+
+autonumber
+actor User
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Search Service" as SearchService
+participant "Product Repository" as ProductRepo
+participant "Settings Service" as SettingsService
+database "Database" as DB
+
+== Main Flow: Search Products with Full-Text Search ==
+
+User -> Browser : Truy cập trang tìm kiếm hoặc nhập từ khóa
+Browser -> Controller : GET /search?q={keyword}&category={category_id}&sort={sort_by}&page={page}
+
+activate Controller
+Controller -> SearchService : searchProducts(keyword, category_id, sort_by, page, limit)
+activate SearchService
+
+' Get new product highlight threshold from settings
+SearchService -> SettingsService : getSetting('new_product_highlight_minutes')
+activate SettingsService
+SettingsService -> DB : SELECT setting_value FROM system_settings\nWHERE setting_key = 'new_product_highlight_minutes'
+activate DB
+DB --> SettingsService : '60' (minutes)
+deactivate DB
+deactivate SettingsService
+
+' Calculate new product threshold timestamp
+SearchService -> SearchService : new_threshold = NOW() - INTERVAL '{value} minutes'
+
+' Perform full-text search query
+SearchService -> ProductRepo : fullTextSearch(keyword, category_id, sort_by, page, limit, new_threshold)
+activate ProductRepo
+
+alt keyword is NOT empty - Full-text search
+    ProductRepo -> DB : SELECT p.product_id, p.name, p.thumbnail_url,\np.current_price, p.buy_now_price, p.start_time, p.end_time,\np.bid_count, p.status, c.name as category_name,\nu_seller.full_name as seller_name,\nu_bidder.full_name as highest_bidder_name,\nts_rank(p.fts, plainto_tsquery('english', :keyword)) as rank,\n(p.start_time > :new_threshold) as is_new\nFROM products p\nJOIN categories c ON p.category_id = c.category_id\nJOIN users u_seller ON p.seller_id = u_seller.user_id\nLEFT JOIN users u_bidder ON p.highest_bidder_id = u_bidder.user_id\nWHERE p.status = 'active'\nAND p.fts @@ plainto_tsquery('english', :keyword)\n[AND p.category_id = :category_id OR c.parent_id = :category_id]\nORDER BY\n  CASE :sort_by\n    WHEN 'end_time_desc' THEN p.end_time\n    WHEN 'price_asc' THEN p.current_price\n    ELSE rank\n  END [DESC/ASC]\nLIMIT :limit OFFSET :offset
+    activate DB
+    DB --> ProductRepo : List of matching products with rank & is_new flag
+    deactivate DB
+
+else keyword is empty - Browse by category
+    ProductRepo -> DB : SELECT p.product_id, p.name, p.thumbnail_url,\np.current_price, p.buy_now_price, p.start_time, p.end_time,\np.bid_count, p.status, c.name as category_name,\nu_seller.full_name as seller_name,\nu_bidder.full_name as highest_bidder_name,\n(p.start_time > :new_threshold) as is_new\nFROM products p\nJOIN categories c ON p.category_id = c.category_id\nJOIN users u_seller ON p.seller_id = u_seller.user_id\nLEFT JOIN users u_bidder ON p.highest_bidder_id = u_bidder.user_id\nWHERE p.status = 'active'\n[AND (p.category_id = :category_id OR c.parent_id = :category_id)]\nORDER BY\n  CASE :sort_by\n    WHEN 'end_time_desc' THEN p.end_time\n    WHEN 'price_asc' THEN p.current_price\n    ELSE p.start_time\n  END [DESC/ASC]\nLIMIT :limit OFFSET :offset
+    activate DB
+    DB --> ProductRepo : List of products with is_new flag
+    deactivate DB
+end
+
+' Get total count for pagination
+ProductRepo -> DB : SELECT COUNT(*) FROM products p\n[JOIN categories c ON ...]\nWHERE [same conditions as above]
+activate DB
+DB --> ProductRepo : total_count
+deactivate DB
+
+deactivate ProductRepo
+
+' Format response with pagination metadata
+SearchService -> SearchService : Calculate: total_pages, has_next, has_prev
+SearchService --> Controller : {\n  products: [...],\n  pagination: {page, total_pages, total_count, has_next, has_prev},\n  sort_by: sort_by\n}
+deactivate SearchService
+
+Controller -> Browser : Render search results page with:\n- Product cards (highlight new products)\n- Pagination controls\n- Sort options\n- Category filter
+deactivate Controller
+
+Browser -> User : Hiển thị kết quả tìm kiếm
+
+== Product Card Display (Section 1.4.1) ==
+
+note right of Browser
+  **Thông tin hiển thị trên mỗi product card:**
+  - Ảnh đại diện (thumbnail_url)
+  - Tên sản phẩm (name)
+  - Giá hiện tại (current_price)
+  - Thông tin bidder đang giữ giá cao nhất (highest_bidder_name)
+  - Giá mua ngay (buy_now_price) - nếu có
+  - Ngày đăng sản phẩm (start_time)
+  - Thời gian còn lại (end_time - NOW())
+  - Số lượt ra giá (bid_count)
+  - Category name (clickable -> browse category)
+  - Badge "NEW" nếu is_new = true (highlighted style)
+end note
+
+== Alternative Flow: Click Category Name ==
+
+User -> Browser : Click vào tên category trên product card
+Browser -> Controller : GET /products?category={category_id}
+note right
+  Redirect to product listing page
+  filtered by selected category
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables & Features:**
+  
+  **products table:**
+  - fts (TSVECTOR): Full-text search column
+  - Auto-updated by trigger combining:
+    * product.name (weight 'A' - highest)
+    * latest product_description.content (weight 'B')
+    * category.name (weight 'C')
+  - INDEX GIN(fts) for fast full-text queries
+  
+  **Full-text Search (PostgreSQL):**
+  - plainto_tsquery(): Parse user query
+  - @@ operator: Match against tsvector
+  - ts_rank(): Relevance scoring
+  
+  **system_settings:**
+  - 'new_product_highlight_minutes': 60
+    Products posted within N minutes get highlighted
+  
+  **Sorting Options:**
+  - end_time_desc: Thời gian kết thúc giảm dần (sắp hết hạn)
+  - price_asc: Giá tăng dần
+  - relevance: Theo độ liên quan (ts_rank) - default for search
+  
+  **Category Filter:**
+  - Can filter by parent or child category
+  - Query checks both category_id and parent_id
+  
+  **Pagination:**
+  - Default: 20 items per page
+  - OFFSET/LIMIT for pagination
+end note
+
+@enduml

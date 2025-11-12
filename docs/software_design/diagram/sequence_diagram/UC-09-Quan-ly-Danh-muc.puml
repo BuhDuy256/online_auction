@@ -1,0 +1,355 @@
+@startuml UC09_QuanLyDanhMuc
+' --- Sequence Diagram: Quản lý Danh mục (CRUD) ---
+' Database Schema: categories (category_id, name, slug, parent_id)
+' Reference: Section 4.1 (Project Description)
+' Features: 2-level hierarchy, auto slug generation, cannot delete with products
+
+autonumber
+actor Admin
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Category Service" as CategoryService
+participant "Category Repository" as CategoryRepo
+participant "Product Repository" as ProductRepo
+database "Database" as DB
+
+== Prerequisite: Admin Views Category List ==
+
+Admin -> Browser : Truy cập trang "Quản lý Danh mục"
+Browser -> Controller : GET /admin/categories
+
+activate Controller
+Controller -> CategoryService : getAllCategories()
+activate CategoryService
+
+CategoryService -> CategoryRepo : getAll()
+activate CategoryRepo
+CategoryRepo -> DB : SELECT c.category_id, c.name, c.slug, c.parent_id,\n  p.name as parent_name,\n  COUNT(pr.product_id) as product_count\nFROM categories c\nLEFT JOIN categories p ON c.parent_id = p.category_id\nLEFT JOIN products pr ON c.category_id = pr.category_id\nGROUP BY c.category_id, c.name, c.slug, c.parent_id, p.name\nORDER BY c.parent_id NULLS FIRST, c.name ASC
+activate DB
+DB --> CategoryRepo : List of categories with product counts
+deactivate DB
+deactivate CategoryRepo
+
+CategoryService --> Controller : {categories: [...], stats: {...}}
+deactivate CategoryService
+
+Controller -> Browser : Render table:\n- Root categories (parent_id = NULL)\n- Child categories (indented)\n- Product count per category\n- Actions: Edit, Delete
+deactivate Controller
+
+== Operation 1: Create Category (Thêm) ==
+
+Admin -> Browser : Click "Thêm Danh mục", điền form:\n- Tên danh mục\n- Chọn danh mục cha (optional)\n- Slug (auto-generated hoặc custom)
+Admin -> Browser : Nhấn "Lưu"
+
+Browser -> Controller : POST /admin/categories\n{\n  name: "Điện thoại di động",\n  parent_id: 1 (category_id of "Điện tử"),\n  slug: "dien-thoai-di-dong" (optional)\n}
+
+activate Controller
+Controller -> CategoryService : createCategory(admin_id, category_data)
+activate CategoryService
+
+' Validate admin role
+CategoryService -> CategoryService : Check admin has 'admin' role
+
+' Validate 2-level hierarchy (Section 4.1)
+alt parent_id is NOT NULL
+    CategoryService -> CategoryRepo : getCategory(parent_id)
+    activate CategoryRepo
+    CategoryRepo -> DB : SELECT category_id, parent_id FROM categories\nWHERE category_id = :parent_id
+    activate DB
+    DB --> CategoryRepo : Parent category
+    deactivate DB
+    deactivate CategoryRepo
+    
+    alt parent.parent_id is NOT NULL
+        CategoryService --> Controller : Error: "Cannot create grandchild category"
+        Controller -> Browser : Display error
+        Browser -> Admin : "Chỉ hỗ trợ 2 cấp danh mục (root và child)"
+    end
+end
+
+' Check duplicate name (with same parent)
+CategoryService -> CategoryRepo : findByNameAndParent(name, parent_id)
+activate CategoryRepo
+CategoryRepo -> DB : SELECT category_id FROM categories\nWHERE name = :name AND parent_id = :parent_id
+activate DB
+DB --> CategoryRepo : NULL or existing category
+deactivate DB
+deactivate CategoryRepo
+
+alt Category name exists under same parent
+    CategoryService --> Controller : Error: "Category name already exists"
+    Controller -> Browser : Display error
+    Browser -> Admin : "Tên danh mục đã tồn tại trong cùng danh mục cha"
+end
+
+' Auto-generate slug if not provided
+alt slug is NULL or empty
+    CategoryService -> CategoryService : slug = slugify(name)\nExample: "Điện thoại di động" → "dien-thoai-di-dong"
+end
+
+' Create category
+CategoryService -> CategoryRepo : createCategory(name, slug, parent_id)
+activate CategoryRepo
+CategoryRepo -> DB : INSERT INTO categories (\n  name, slug, parent_id\n) VALUES (\n  :name, :slug, :parent_id\n)
+activate DB
+DB --> CategoryRepo : category_id (newly created)
+
+note right of DB
+  **Trigger: auto_generate_slug()**
+  If slug is NULL, automatically generates from name
+  
+  **Constraint: UNIQUE(parent_id, slug)**
+  Same slug OK if different parent
+  
+  **Constraint: ck_category_two_levels**
+  Ensures parent must be root (parent_id IS NULL)
+  if this is a child category
+end note
+
+deactivate DB
+deactivate CategoryRepo
+
+CategoryService --> Controller : {success: true, category_id: category_id}
+deactivate CategoryService
+
+Controller -> Browser : Success message, reload category list
+deactivate Controller
+
+Browser -> Admin : "Đã thêm danh mục thành công"
+
+== Operation 2: Update Category (Cập nhật) ==
+
+Admin -> Browser : Click "Sửa" trên một danh mục
+Browser -> Controller : GET /admin/categories/{category_id}/edit
+
+activate Controller
+Controller -> CategoryService : getCategory(category_id)
+activate CategoryService
+CategoryService -> CategoryRepo : getCategory(category_id)
+activate CategoryRepo
+CategoryRepo -> DB : SELECT * FROM categories WHERE category_id = :category_id
+activate DB
+DB --> CategoryRepo : Category details
+deactivate DB
+deactivate CategoryRepo
+CategoryService --> Controller : {category: {...}}
+deactivate CategoryService
+Controller -> Browser : Render edit form with current values
+deactivate Controller
+
+Admin -> Browser : Sửa thông tin:\n- Đổi tên: "Máy tính xách tay" → "Laptop"\n- Đổi slug: "may-tinh-xach-tay" → "laptop"
+Admin -> Browser : Nhấn "Cập nhật"
+
+Browser -> Controller : PUT /admin/categories/{category_id}\n{\n  name: "Laptop",\n  slug: "laptop"\n}
+
+activate Controller
+Controller -> CategoryService : updateCategory(admin_id, category_id, updated_data)
+activate CategoryService
+
+' Get current category
+CategoryService -> CategoryRepo : getCategory(category_id)
+activate CategoryRepo
+CategoryRepo -> DB : SELECT category_id, name, slug, parent_id FROM categories\nWHERE category_id = :category_id
+activate DB
+DB --> CategoryRepo : Current category
+deactivate DB
+deactivate CategoryRepo
+
+' Check duplicate name (excluding self)
+CategoryService -> CategoryRepo : findDuplicateName(name, parent_id, exclude_id=category_id)
+activate CategoryRepo
+CategoryRepo -> DB : SELECT category_id FROM categories\nWHERE name = :name\nAND parent_id = :parent_id\nAND category_id != :category_id
+activate DB
+DB --> CategoryRepo : NULL or duplicate
+deactivate DB
+deactivate CategoryRepo
+
+alt Duplicate name found
+    CategoryService --> Controller : Error: "Name already exists"
+    Controller -> Browser : Display error
+    Browser -> Admin : "Tên danh mục đã tồn tại"
+end
+
+' Check duplicate slug
+CategoryService -> CategoryRepo : findDuplicateSlug(slug, parent_id, exclude_id=category_id)
+activate CategoryRepo
+CategoryRepo -> DB : SELECT category_id FROM categories\nWHERE slug = :slug\nAND parent_id = :parent_id\nAND category_id != :category_id
+activate DB
+DB --> CategoryRepo : NULL or duplicate
+deactivate DB
+deactivate CategoryRepo
+
+alt Duplicate slug found
+    CategoryService --> Controller : Error: "Slug already exists"
+    Controller -> Browser : Display error
+    Browser -> Admin : "Slug đã tồn tại"
+end
+
+' Update category
+CategoryService -> CategoryRepo : updateCategory(category_id, updated_data)
+activate CategoryRepo
+CategoryRepo -> DB : UPDATE categories\nSET name = :name,\n    slug = :slug\nWHERE category_id = :category_id
+activate DB
+DB --> CategoryRepo : Updated
+
+note right of DB
+  **Trigger: auto_generate_slug()**
+  Updates slug if name changed and slug not provided
+  
+  **Note:** Cannot change parent_id
+  (would break hierarchy rules)
+end note
+
+deactivate DB
+deactivate CategoryRepo
+
+' Update products.fts (trigger will handle this)
+note right of DB
+  **Side effect:**
+  products_fts_update() trigger will update
+  all products in this category to reflect
+  new category name in full-text search
+end note
+
+CategoryService --> Controller : {success: true}
+deactivate CategoryService
+
+Controller -> Browser : Success message, reload list
+deactivate Controller
+
+Browser -> Admin : "Đã cập nhật danh mục"
+
+== Operation 3: Delete Category (Xóa) ==
+
+Admin -> Browser : Click "Xóa" trên một danh mục
+Browser -> Controller : Show confirmation dialog
+
+Admin -> Browser : Xác nhận xóa
+Browser -> Controller : DELETE /admin/categories/{category_id}
+
+activate Controller
+Controller -> CategoryService : deleteCategory(admin_id, category_id)
+activate CategoryService
+
+' Check if category has products (Section 4.1)
+CategoryService -> ProductRepo : countProducts(category_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT COUNT(*) as count FROM products\nWHERE category_id = :category_id
+activate DB
+DB --> ProductRepo : count
+deactivate DB
+deactivate ProductRepo
+
+alt count > 0 - Category has products
+    CategoryService --> Controller : Error: "Cannot delete category with products"
+    Controller -> Browser : Display error
+    deactivate Controller
+    Browser -> Admin : "Không thể xóa danh mục đã có sản phẩm"
+    
+else count = 0 - Category is empty
+
+    ' Check if category has child categories
+    CategoryService -> CategoryRepo : countChildCategories(category_id)
+    activate CategoryRepo
+    CategoryRepo -> DB : SELECT COUNT(*) as count FROM categories\nWHERE parent_id = :category_id
+    activate DB
+    DB --> CategoryRepo : child_count
+    deactivate DB
+    deactivate CategoryRepo
+    
+    alt child_count > 0
+        CategoryService --> Controller : Error: "Cannot delete category with children"
+        Controller -> Browser : Display error
+        Browser -> Admin : "Không thể xóa danh mục còn danh mục con"
+    
+    else child_count = 0 - Safe to delete
+        
+        ' Delete category
+        CategoryService -> CategoryRepo : deleteCategory(category_id)
+        activate CategoryRepo
+        CategoryRepo -> DB : DELETE FROM categories\nWHERE category_id = :category_id
+        activate DB
+        DB --> CategoryRepo : Deleted
+        
+        note right of DB
+          **FK Constraint: ON DELETE RESTRICT**
+          from products table prevents deletion
+          if products exist (already checked above)
+        end note
+        
+        deactivate DB
+        deactivate CategoryRepo
+        
+        CategoryService --> Controller : {success: true, deleted: true}
+        deactivate CategoryService
+        
+        Controller -> Browser : Success message, reload list
+        deactivate Controller
+        
+        Browser -> Admin : "Đã xóa danh mục"
+    end
+end
+
+== Alternative Flow: View Category Tree ==
+
+Admin -> Browser : View category hierarchy
+Browser -> Controller : GET /admin/categories/tree
+
+activate Controller
+Controller -> CategoryService : getCategoryTree()
+activate CategoryService
+
+CategoryService -> CategoryRepo : getTreeStructure()
+activate CategoryRepo
+CategoryRepo -> DB : -- Recursive query to build tree\nWITH RECURSIVE category_tree AS (\n  -- Root categories\n  SELECT category_id, name, slug, parent_id, 0 as level,\n    ARRAY[category_id] as path\n  FROM categories\n  WHERE parent_id IS NULL\n  \n  UNION ALL\n  \n  -- Child categories\n  SELECT c.category_id, c.name, c.slug, c.parent_id, ct.level + 1,\n    ct.path || c.category_id\n  FROM categories c\n  JOIN category_tree ct ON c.parent_id = ct.category_id\n)\nSELECT * FROM category_tree\nORDER BY path
+activate DB
+DB --> CategoryRepo : Tree structure
+deactivate DB
+deactivate CategoryRepo
+
+CategoryService --> Controller : {tree: [...]}
+deactivate CategoryService
+
+Controller -> Browser : Render tree view:\n📁 Điện tử (Electronics)\n  └─ 📱 Điện thoại di động\n  └─ 💻 Laptop\n📁 Thời trang (Fashion)\n  └─ 👟 Giày\n  └─ ⌚ Đồng hồ
+deactivate Controller
+
+== Notes ==
+
+note right of DB
+  **Database Schema:**
+  
+  **categories:**
+  - category_id (PK)
+  - name (VARCHAR, NOT NULL)
+  - slug (VARCHAR, NOT NULL)
+  - parent_id (FK → categories, nullable)
+  
+  **Constraints:**
+  - UNIQUE(parent_id, slug): Same slug OK if different parent
+  - CHECK(parent_id != category_id): Prevent self-reference
+  - ck_category_two_levels: Parent must be root (no grandchildren)
+  - FK from products: ON DELETE RESTRICT
+  
+  **Triggers:**
+  - auto_generate_slug(): Auto-creates URL-friendly slug from name
+  
+  **Business Rules (Section 4.1):**
+  - Only 2 levels: Root (parent_id = NULL) and Child (parent_id = root_id)
+  - Cannot delete category if it has products
+  - Cannot delete category if it has child categories
+  - Slug auto-generated if not provided
+  - Category name must be unique within same parent
+  
+  **2-Level Hierarchy:**
+  Root categories: parent_id = NULL
+    └─ Child categories: parent_id = root_category_id
+  No grandchildren allowed (enforced by constraint)
+  
+  **Example:**
+  Điện tử (parent_id=NULL)
+    ├─ Điện thoại (parent_id=1) ✓
+    └─ Laptop (parent_id=1) ✓
+  Điện thoại > iPhone (parent_id=2) ✗ NOT ALLOWED
+end note
+
+@enduml

@@ -1,0 +1,239 @@
+@startuml ComponentDiagram
+' --- Component Diagram: Online Auction System Architecture ---
+' Reference: Full system design
+' Technology Stack: React (Frontend), Node.js/Express (Backend), PostgreSQL (Database)
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+' Define external systems
+Person(user, "User", "Guest, Bidder, Seller, Admin")
+System_Ext(email_service, "Email Service", "SMTP / SendGrid / AWS SES")
+System_Ext(payment_gateway, "Payment Gateway", "VNPay / Momo / Banking")
+System_Ext(storage_service, "Cloud Storage", "AWS S3 / Cloudinary")
+System_Ext(oauth_providers, "OAuth Providers", "Google, Facebook, Github")
+
+' Frontend Container
+Container_Boundary(frontend, "Frontend Application") {
+    Component(react_app, "React SPA", "React 18 + TypeScript", "User Interface")
+    Component(redux_store, "State Management", "Redux / Zustand", "Global state, user session")
+    Component(api_client, "API Client", "Axios / Fetch", "HTTP client with interceptors")
+    Component(websocket_client, "WebSocket Client", "Socket.IO Client", "Real-time chat, bid updates")
+    Component(router, "React Router", "react-router-dom", "Client-side routing")
+}
+
+' Backend Container
+Container_Boundary(backend, "Backend API Server") {
+    
+    ' API Layer
+    Component(express_app, "Express Server", "Node.js + Express", "HTTP API server")
+    Component(auth_middleware, "Auth Middleware", "JWT / Passport.js", "Authentication & authorization")
+    Component(validation_middleware, "Validation", "express-validator", "Input validation")
+    Component(error_handler, "Error Handler", "Middleware", "Global error handling")
+    Component(websocket_server, "WebSocket Server", "Socket.IO", "Real-time communication")
+    
+    ' Controller Layer
+    Component(auth_controller, "Auth Controller", "UC-01, UC-02", "Register, Login, OAuth")
+    Component(product_controller, "Product Controller", "UC-03, UC-04, UC-08", "Search, View, Create products")
+    Component(bid_controller, "Bid Controller", "UC-05", "Manual & auto bidding")
+    Component(order_controller, "Order Controller", "UC-12, UC-13", "Order completion, Chat")
+    Component(admin_controller, "Admin Controller", "UC-09, UC-10", "Categories, Upgrades")
+    Component(review_controller, "Review Controller", "UC-11", "User reviews")
+    Component(watchlist_controller, "Watchlist Controller", "UC-06", "Watchlist management")
+    Component(comment_controller, "Comment Controller", "UC-07", "Product comments")
+    
+    ' Service Layer (Business Logic)
+    Component(auth_service, "Auth Service", "Business Logic", "User authentication, OTP")
+    Component(product_service, "Product Service", "Business Logic", "Product CRUD, Search")
+    Component(bid_service, "Bid Service", "Business Logic", "Bid validation, Auto-bid")
+    Component(order_service, "Order Service", "Business Logic", "Order workflow, Status")
+    Component(chat_service, "Chat Service", "Business Logic", "Message handling")
+    Component(notification_service, "Notification Service", "Business Logic", "Email, In-app notifications")
+    Component(upload_service, "Upload Service", "Business Logic", "Image upload to cloud")
+    
+    ' Repository Layer (Data Access)
+    Component(user_repo, "User Repository", "Prisma ORM", "users, users_roles, user_otps")
+    Component(product_repo, "Product Repository", "Prisma ORM", "products, product_images, descriptions")
+    Component(bid_repo, "Bid Repository", "Prisma ORM", "bids, auto_bids")
+    Component(order_repo, "Order Repository", "Prisma ORM", "orders, invoices, order_chat")
+    Component(category_repo, "Category Repository", "Prisma ORM", "categories")
+    Component(review_repo, "Review Repository", "Prisma ORM", "reviews")
+    Component(watchlist_repo, "Watchlist Repository", "Prisma ORM", "watchlist")
+    Component(comment_repo, "Comment Repository", "Prisma ORM", "product_comments")
+    
+}
+
+' Database Container
+ContainerDb(database, "PostgreSQL Database", "PostgreSQL 13+", "Relational data storage with TSVECTOR, Triggers")
+
+' External Services
+System_Ext(cron_scheduler, "Cron Scheduler", "node-cron / Bull Queue", "Background jobs: expire requests, end auctions")
+
+' === Relationships: User to Frontend ===
+Rel(user, react_app, "Uses", "HTTPS")
+Rel(user, websocket_client, "Real-time updates", "WSS")
+
+' === Frontend Internal ===
+Rel(react_app, redux_store, "Reads/Writes state")
+Rel(react_app, router, "Navigate pages")
+Rel(react_app, api_client, "HTTP requests")
+Rel(react_app, websocket_client, "Subscribe events")
+
+' === Frontend to Backend ===
+Rel(api_client, express_app, "REST API", "JSON/HTTPS")
+Rel(websocket_client, websocket_server, "WebSocket", "WSS")
+
+' === Backend API Layer ===
+Rel(express_app, auth_middleware, "Authenticate")
+Rel(express_app, validation_middleware, "Validate input")
+Rel(express_app, error_handler, "Handle errors")
+Rel(express_app, auth_controller, "Route /auth/*")
+Rel(express_app, product_controller, "Route /products/*")
+Rel(express_app, bid_controller, "Route /bids/*")
+Rel(express_app, order_controller, "Route /orders/*")
+Rel(express_app, admin_controller, "Route /admin/*")
+Rel(express_app, review_controller, "Route /reviews/*")
+Rel(express_app, watchlist_controller, "Route /watchlist/*")
+Rel(express_app, comment_controller, "Route /comments/*")
+
+' === Controllers to Services ===
+Rel(auth_controller, auth_service, "Calls")
+Rel(product_controller, product_service, "Calls")
+Rel(bid_controller, bid_service, "Calls")
+Rel(order_controller, order_service, "Calls")
+Rel(order_controller, chat_service, "Calls")
+Rel(admin_controller, product_service, "Calls")
+Rel(review_controller, order_service, "Calls")
+Rel(watchlist_controller, product_service, "Calls")
+Rel(comment_controller, product_service, "Calls")
+
+' === Services to Repositories ===
+Rel(auth_service, user_repo, "CRUD operations")
+Rel(product_service, product_repo, "CRUD operations")
+Rel(product_service, category_repo, "Read categories")
+Rel(bid_service, bid_repo, "CRUD operations")
+Rel(bid_service, product_repo, "Update current_price")
+Rel(order_service, order_repo, "CRUD operations")
+Rel(order_service, review_repo, "Create reviews")
+Rel(chat_service, order_repo, "Save messages")
+
+' === Services to External Systems ===
+Rel(auth_service, email_service, "Send OTP, verification", "SMTP")
+Rel(notification_service, email_service, "Send notifications", "SMTP")
+Rel(upload_service, storage_service, "Upload images", "HTTPS")
+Rel(auth_service, oauth_providers, "OAuth2 flow", "HTTPS")
+Rel(order_service, payment_gateway, "Payment verification", "API")
+
+' === Repositories to Database ===
+Rel(user_repo, database, "SQL queries", "TCP/IP")
+Rel(product_repo, database, "SQL queries", "TCP/IP")
+Rel(bid_repo, database, "SQL queries", "TCP/IP")
+Rel(order_repo, database, "SQL queries", "TCP/IP")
+Rel(category_repo, database, "SQL queries", "TCP/IP")
+Rel(review_repo, database, "SQL queries", "TCP/IP")
+Rel(watchlist_repo, database, "SQL queries", "TCP/IP")
+Rel(comment_repo, database, "SQL queries", "TCP/IP")
+
+' === Background Jobs ===
+Rel(cron_scheduler, product_service, "End expired auctions")
+Rel(cron_scheduler, order_service, "Auto-cancel no-payment orders")
+Rel(cron_scheduler, user_repo, "Expire upgrade requests")
+
+' === WebSocket Events ===
+Rel(websocket_server, chat_service, "Handle chat messages")
+Rel(websocket_server, bid_service, "Broadcast new bids")
+Rel(websocket_server, react_app, "Push updates", "WSS")
+
+note right of frontend
+  **Frontend Stack:**
+  - Framework: React 18 + TypeScript
+  - Build: Vite
+  - Styling: Tailwind CSS
+  - State: Redux Toolkit / Zustand
+  - Forms: React Hook Form
+  - Routing: React Router v6
+  - WebSocket: Socket.IO Client
+  
+  **Key Pages:**
+  - /: Homepage (product list)
+  - /search: Search results (UC-03)
+  - /products/:id: Product detail (UC-04)
+  - /register: Registration (UC-01)
+  - /login: Login (UC-02)
+  - /watchlist: Watchlist (UC-06)
+  - /orders/:id: Order detail (UC-12, UC-13)
+  - /admin: Admin panel (UC-09, UC-10)
+end note
+
+note right of backend
+  **Backend Stack:**
+  - Runtime: Node.js 18+ LTS
+  - Framework: Express.js
+  - ORM: Prisma
+  - Auth: JWT + Passport.js
+  - Validation: express-validator
+  - WebSocket: Socket.IO
+  - File Upload: Multer
+  - Email: Nodemailer
+  - Scheduler: node-cron / Bull
+  
+  **Architecture Pattern:**
+  - Layered: Controller → Service → Repository
+  - Separation of Concerns
+  - Dependency Injection (DI)
+  - Error handling middleware
+  
+  **Security:**
+  - Helmet.js (HTTP headers)
+  - CORS configuration
+  - Rate limiting (express-rate-limit)
+  - Input sanitization
+  - SQL injection prevention (Prisma)
+end note
+
+note right of database
+  **Database Features:**
+  - PostgreSQL 13+
+  - TSVECTOR for full-text search
+  - GIN indexes on fts columns
+  - Triggers:
+    * products_fts_update
+    * update_product_on_bid_insert
+    * auto_extend_on_late_bid
+    * update_user_rating_on_review
+  
+  **Tables (20+):**
+  - users, roles, permissions
+  - products, categories, bids
+  - orders, invoices, reviews
+  - order_chat, watchlist
+  - product_comments, notifications
+  
+  **Backup Strategy:**
+  - Daily automated backups
+  - Point-in-time recovery
+  - Replication for read scaling
+end note
+
+note bottom
+  **Deployment Architecture:**
+  
+  **Development:**
+  - Frontend: npm run dev (Vite)
+  - Backend: npm run dev (nodemon)
+  - Database: Docker PostgreSQL
+  
+  **Production:**
+  - Frontend: Vercel / Netlify (Static hosting)
+  - Backend: AWS EC2 / DigitalOcean / Render
+  - Database: AWS RDS PostgreSQL
+  - Storage: AWS S3 / Cloudinary
+  - CDN: CloudFront / Cloudflare
+  
+  **CI/CD:**
+  - GitHub Actions
+  - Automated testing (Jest, Playwright)
+  - Linting (ESLint, Prettier)
+  - Docker containerization
+end note
+
+@enduml

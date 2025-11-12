@@ -1,0 +1,278 @@
+@startuml ActivityTimKiemSanPham
+' --- Activity Diagram: Full-Text Search với PostgreSQL ---
+' Reference: UC-03 (Tìm kiếm sản phẩm)
+' Database: products.fts (TSVECTOR), system_settings
+' Features: Multi-criteria search, filtering, sorting, highlighting
+
+start
+
+:User visits homepage or search page;
+
+:Display search interface;
+note right
+  **Search Form:**
+  - Text input: Keyword
+  - Category filter: Dropdown (All/Specific)
+  - Price range: Min - Max
+  - Sort by: End time, Price, Relevance
+  - "Sản phẩm mới" toggle
+end note
+
+:User enters search keyword;
+note right
+  Examples:
+  - "laptop gaming"
+  - "điện thoại iphone"
+  - "giày nike"
+end note
+
+:User optionally selects filters;
+note right
+  Optional filters:
+  - Category: Electronics, Fashion, etc.
+  - Price: 1M - 5M VND
+  - Only new products (< 60 minutes)
+  - Status: active only
+end note
+
+:User clicks "Tìm kiếm" button;
+
+partition "Backend Processing" {
+    
+    :Receive search request\nGET /search?q=:keyword&category=:cat&...;
+    
+    :Validate input parameters;
+    note right
+      Validation:
+      - Keyword length: 1-100 chars
+      - Sanitize SQL injection
+      - Escape special chars
+    end note
+    
+    if (Keyword provided?) then (yes)
+        :Build full-text search query;
+        note right
+          **PostgreSQL Query:**
+          
+          SELECT p.*, c.name as category_name,
+            ts_rank(p.fts, plainto_tsquery('english', :keyword)) as relevance,
+            (p.created_at > NOW() - INTERVAL ':threshold minutes') as is_new
+          FROM products p
+          JOIN categories c ON p.category_id = c.category_id
+          WHERE p.fts @@ plainto_tsquery('english', :keyword)
+            AND p.status = 'active'
+            AND p.end_time > CURRENT_TIMESTAMP
+            [AND p.category_id = :category_id]  -- if filter
+            [AND p.current_price BETWEEN :min AND :max]  -- if price filter
+          ORDER BY
+            CASE :sort
+              WHEN 'relevance' THEN ts_rank(p.fts, plainto_tsquery(...))
+              WHEN 'end_time_desc' THEN p.end_time DESC
+              WHEN 'price_asc' THEN p.current_price ASC
+            END
+          LIMIT 20 OFFSET :page*20;
+        end note
+        
+        :Execute full-text search with ts_rank();
+        
+    else (no)
+        :Build regular query (browse all);
+        note right
+          If no keyword:
+          - Return all active products
+          - Apply filters only
+          - Sort by end_time DESC
+        end note
+        
+        :Execute regular SELECT with filters;
+    endif
+    
+    :Fetch matching products from database;
+    
+    if (Results found?) then (yes)
+        :Load product details\n(thumbnail, price, bid_count, end_time);
+        
+        :Calculate "is_new" flag;
+        note right
+          FROM system_settings:
+          new_product_highlight_minutes = 60
+          
+          is_new = (created_at > NOW() - 60 minutes)
+        end note
+        
+        :Highlight search keywords in results;
+        note right
+          **Keyword Highlighting:**
+          - Use ts_headline() function
+          - Wrap matches in <mark> tags
+          - Show snippet: "...laptop <mark>gaming</mark> RTX..."
+        end note
+        
+        :Count total results for pagination;
+        
+        :Return search results JSON;
+        note right
+          **Response Format:**
+          {
+            "total": 123,
+            "page": 1,
+            "per_page": 20,
+            "results": [
+              {
+                "product_id": 456,
+                "name": "Laptop Gaming ASUS ROG",
+                "thumbnail_url": "...",
+                "current_price": 15000000,
+                "buy_now_price": 18000000,
+                "bid_count": 8,
+                "end_time": "2024-11-15T20:00:00Z",
+                "is_new": true,
+                "category_name": "Electronics",
+                "relevance": 0.85
+              },
+              ...
+            ]
+          }
+        end note
+        
+    else (no)
+        :Return empty results;
+        note right
+          Message: "Không tìm thấy sản phẩm phù hợp"
+          Suggestions:
+          - "Thử từ khóa khác"
+          - "Xóa bộ lọc"
+          - "Xem sản phẩm mới nhất"
+        end note
+    endif
+    
+}
+
+partition "Frontend Display" {
+    
+    if (Has results?) then (yes)
+        :Display product grid;
+        note right
+          **Product Card:**
+          - Thumbnail image
+          - Product name (highlighted)
+          - Current price (bold)
+          - Buy now price (strikethrough)
+          - Countdown timer
+          - "MỚI" badge (if is_new)
+          - Bid count: "15 lượt"
+        end note
+        
+        :Show pagination controls;
+        note right
+          Pagination:
+          - Page 1 of 7
+          - Previous | Next buttons
+          - Jump to page input
+        end note
+        
+        :Display sort options;
+        note right
+          Sort dropdown:
+          - "Sắp kết thúc" (end_time DESC)
+          - "Giá thấp nhất" (price ASC)
+          - "Liên quan nhất" (relevance DESC)
+        end note
+        
+        :Highlight "NEW" products with badge;
+        
+    else (no results)
+        :Display "Không tìm thấy" message;
+        
+        :Suggest alternative actions;
+        note right
+          Suggestions:
+          1. Try different keywords
+          2. Browse by category
+          3. View trending products
+          4. Clear filters
+        end note
+    endif
+    
+}
+
+:User views search results;
+
+if (User satisfied?) then (yes)
+    :Click on product to view details;
+    :Navigate to UC-04 (View Product Detail);
+    stop
+else (no)
+    :Refine search criteria;
+    note right
+      User can:
+      - Change keyword
+      - Adjust filters
+      - Change sort order
+      - Go to next page
+    end note
+    backward :Re-submit search;
+endif
+
+' === Alternative Flows ===
+
+note right
+  **Alternative Flows:**
+  
+  1. **Advanced Search:**
+     - Multiple keywords: "laptop AND gaming"
+     - Exclude: "iphone NOT 11"
+     - Phrase: "\"macbook pro\""
+  
+  2. **Category Browse:**
+     - No keyword, filter by category only
+     - Show category tree hierarchy
+  
+  3. **Voice Search (Future):**
+     - Speech-to-text API
+     - Convert to keyword search
+  
+  4. **Search Suggestions:**
+     - Autocomplete as user types
+     - Popular searches
+     - Recent searches (cookie)
+  
+  5. **Saved Searches:**
+     - User saves search criteria
+     - Get email alerts for new matches
+end note
+
+note bottom
+  **Database Schema:**
+  
+  **products.fts (TSVECTOR):**
+  - Weighted full-text search column
+  - Auto-updated via trigger: products_fts_update()
+  - Indexed with GIN for fast search
+  
+  **Weighting:**
+  - A: name (highest priority)
+  - B: description
+  - C: category name
+  
+  **Query Example:**
+  setweight(to_tsvector('english', name), 'A') ||
+  setweight(to_tsvector('english', description), 'B') ||
+  setweight(to_tsvector('english', category), 'C')
+  
+  **system_settings:**
+  - new_product_highlight_minutes: INT (default 60)
+  
+  **Performance:**
+  - GIN index on products.fts
+  - Index on (category_id, status, end_time)
+  - Cache popular searches (Redis)
+  - Query execution: < 100ms for 10K products
+  
+  **Related Use Cases:**
+  - UC-04: Xem chi tiết (after clicking result)
+  - UC-06: Add to watchlist (from search results)
+  - UC-05: Đặt giá (quick bid from results)
+end note
+
+@enduml

@@ -1,0 +1,236 @@
+@startuml UC07_ProductComments
+' --- Sequence Diagram: Comment trên sản phẩm (thay Questions) ---
+' Database Schema: product_comments (with parent_id for nested comments)
+' Reference: Section 2.4 (Hỏi người bán về sản phẩm)
+' Features: Nested comments, email notifications
+
+autonumber
+actor User
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Comment Service" as CommentService
+participant "Comment Repository" as CommentRepo
+participant "Product Repository" as ProductRepo
+participant "Email Service" as EmailService
+participant "Notification Service" as NotificationService
+database "Database" as DB
+
+== Main Flow: Post a Comment (Top-level) ==
+
+User -> Browser : Nhập comment, nhấn "Gửi"
+note right
+  User có thể là:
+  - Bidder: Hỏi về sản phẩm
+  - Seller: Trả lời comment
+  - Anyone: Thảo luận về sản phẩm
+end note
+
+Browser -> Controller : POST /products/{product_id}/comments\n{content: "Comment text", parent_id: null}
+
+activate Controller
+Controller -> CommentService : createComment(user_id, product_id, content, parent_id=null)
+activate CommentService
+
+' Get product details (to identify seller)
+CommentService -> ProductRepo : getProduct(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT product_id, seller_id, name\nFROM products\nWHERE product_id = :product_id
+activate DB
+DB --> ProductRepo : Product details
+deactivate DB
+deactivate ProductRepo
+
+' Validate parent_id if provided
+alt parent_id is NOT null
+    CommentService -> CommentRepo : getComment(parent_id)
+    activate CommentRepo
+    CommentRepo -> DB : SELECT comment_id, product_id, user_id\nFROM product_comments\nWHERE comment_id = :parent_id
+    activate DB
+    DB --> CommentRepo : Parent comment
+    deactivate DB
+    deactivate CommentRepo
+    
+    alt parent comment not found OR parent.product_id != product_id
+        CommentService --> Controller : Error: "Invalid parent comment"
+        Controller -> Browser : Display error
+        Browser -> User : "Comment cha không hợp lệ"
+    end
+end
+
+' Save comment
+CommentService -> CommentRepo : saveComment(user_id, product_id, content, parent_id)
+activate CommentRepo
+CommentRepo -> DB : INSERT INTO product_comments\n(product_id, user_id, content, parent_id, created_at)\nVALUES (:product_id, :user_id, :content, :parent_id, CURRENT_TIMESTAMP)
+activate DB
+DB --> CommentRepo : comment_id (newly created)
+deactivate DB
+deactivate CommentRepo
+
+' Send notifications
+alt parent_id is null - Top-level comment (Question to seller)
+    
+    ' Notify seller via email (Section 2.4)
+    CommentService -> EmailService : notifySeller(product_id, seller_id, comment_id, user_id, content)
+    activate EmailService
+    EmailService -> EmailService : Send email to seller:\n"Có câu hỏi mới về sản phẩm '{product_name}'"\n+ Link to product detail page
+    deactivate EmailService
+    
+    ' Create in-app notification
+    CommentService -> NotificationService : createNotification(seller_id, 'new_comment', product_id)
+    activate NotificationService
+    NotificationService -> DB : INSERT INTO notifications\n(user_id, type, content, action_url)\nVALUES (:seller_id, 'new_comment', '...', '/products/{product_id}')
+    activate DB
+    DB --> NotificationService : notification_id
+    deactivate DB
+    deactivate NotificationService
+
+else parent_id exists - Reply comment
+    
+    ' Get parent comment author
+    CommentService -> CommentRepo : getComment(parent_id)
+    activate CommentRepo
+    CommentRepo -> DB : SELECT user_id FROM product_comments\nWHERE comment_id = :parent_id
+    activate DB
+    DB --> CommentRepo : parent_comment_user_id
+    deactivate DB
+    deactivate CommentRepo
+    
+    ' Notify parent comment author
+    alt user_id != parent_comment_user_id
+        CommentService -> EmailService : notifyReply(parent_comment_user_id, comment_id, user_id, content)
+        activate EmailService
+        EmailService -> EmailService : Send email:\n"Có người trả lời comment của bạn"
+        deactivate EmailService
+        
+        CommentService -> NotificationService : createNotification(parent_comment_user_id, 'comment_reply', product_id)
+        activate NotificationService
+        NotificationService -> DB : INSERT INTO notifications...
+        activate DB
+        DB --> NotificationService : notification_id
+        deactivate DB
+        deactivate NotificationService
+    end
+    
+    ' If replier is seller, notify all participants (Section 6.1)
+    alt user_id = seller_id
+        CommentService -> CommentRepo : getAllCommentAuthors(product_id)
+        activate CommentRepo
+        CommentRepo -> DB : SELECT DISTINCT user_id FROM product_comments\nWHERE product_id = :product_id AND user_id != :seller_id
+        activate DB
+        DB --> CommentRepo : List of user_ids
+        deactivate DB
+        deactivate CommentRepo
+        
+        CommentService -> EmailService : notifyBidders(user_ids, product_id, comment_content)
+        activate EmailService
+        EmailService -> EmailService : Bulk send: "Người bán đã trả lời comment"
+        deactivate EmailService
+    end
+end
+
+CommentService --> Controller : {success: true, comment_id: comment_id, created_at: timestamp}
+deactivate CommentService
+
+Controller -> Browser : HTTP 201 Created\nReturn comment data
+deactivate Controller
+
+Browser -> User : Hiển thị comment mới trong danh sách
+
+== Alternative Flow: Update Comment ==
+
+User -> Browser : Click "Edit", sửa nội dung, nhấn "Save"
+Browser -> Controller : PUT /products/{product_id}/comments/{comment_id}\n{content: "Updated content"}
+
+activate Controller
+Controller -> CommentService : updateComment(user_id, comment_id, new_content)
+activate CommentService
+
+' Verify ownership
+CommentService -> CommentRepo : getComment(comment_id)
+activate CommentRepo
+CommentRepo -> DB : SELECT user_id, content FROM product_comments\nWHERE comment_id = :comment_id
+activate DB
+DB --> CommentRepo : Comment details
+deactivate DB
+deactivate CommentRepo
+
+alt comment.user_id != user_id
+    CommentService --> Controller : Error: "Unauthorized"
+    Controller -> Browser : HTTP 403 Forbidden
+    Browser -> User : "Bạn không có quyền sửa comment này"
+else comment.user_id = user_id
+    CommentService -> CommentRepo : updateComment(comment_id, new_content)
+    activate CommentRepo
+    CommentRepo -> DB : UPDATE product_comments\nSET content = :new_content, updated_at = CURRENT_TIMESTAMP\nWHERE comment_id = :comment_id
+    activate DB
+    DB --> CommentRepo : Updated
+    deactivate DB
+    deactivate CommentRepo
+    
+    CommentService --> Controller : {success: true, updated_at: timestamp}
+    deactivate CommentService
+    Controller -> Browser : Return updated comment
+    deactivate Controller
+    Browser -> User : Hiển thị comment đã cập nhật
+end
+
+== Display Comments (Nested Structure) ==
+
+note right of Browser
+  **Frontend Display:**
+  Hiển thị comments theo cấu trúc nested tree:
+  
+  📝 User A: "Sản phẩm còn hàng không?"
+      └─ 💬 Seller: "Còn hàng bạn nhé"
+      └─ 💬 User A: "Cảm ơn bạn"
+  
+  📝 User B: "Có thể giao hàng COD không?"
+      └─ 💬 Seller: "Có được ạ"
+  
+  **SQL Query for nested comments:**
+  
+  WITH RECURSIVE comment_tree AS (
+    -- Top-level comments
+    SELECT *, 0 as level FROM product_comments
+    WHERE product_id = :product_id AND parent_id IS NULL
+    
+    UNION ALL
+    
+    -- Child comments
+    SELECT c.*, ct.level + 1
+    FROM product_comments c
+    JOIN comment_tree ct ON c.parent_id = ct.comment_id
+  )
+  SELECT * FROM comment_tree
+  ORDER BY created_at ASC
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - product_comments(comment_id, product_id, user_id,
+    content, parent_id, created_at, updated_at)
+    * parent_id FK -> product_comments(comment_id)
+    * Allows nested/threaded comments
+  
+  **Business Rules:**
+  - Any authenticated user can comment
+  - Users can edit their own comments
+  - parent_id = NULL: Top-level comment (question)
+  - parent_id != NULL: Reply to another comment
+  - No depth limit (recursive structure)
+  
+  **Email Notifications (Section 6.1):**
+  - Top-level comment: Notify seller
+  - Reply comment: Notify parent author
+  - Seller reply: Notify all comment participants
+  
+  **Changed from Questions:**
+  - Old: questions(question_id, product_id, asker_id,
+    question_text, answer_text) - 1:1 Q&A
+  - New: product_comments with nested structure
+    Allows multiple replies and discussions
+end note
+
+@enduml

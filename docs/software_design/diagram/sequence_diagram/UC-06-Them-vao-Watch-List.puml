@@ -1,0 +1,185 @@
+@startuml UC06_WatchList
+' --- Sequence Diagram: Watchlist Management ---
+' Features: Add to watchlist, Remove from watchlist, View watchlist
+' Database: watchlist(user_id, product_id) - Composite PK
+
+autonumber
+actor Bidder
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Watchlist Service" as WatchlistService
+participant "Watchlist Repository" as WatchlistRepo
+database "Database" as DB
+
+== Operation 1: Add to Watchlist ==
+
+Bidder -> Browser : Click "Thêm vào Watch List" button on product page
+Browser -> Controller : POST /products/:product_id/watchlist
+
+activate Controller
+Controller -> Controller : Authenticate user → get user_id
+Controller -> WatchlistService : addToWatchlist(user_id, product_id)
+activate WatchlistService
+
+' Check if already exists
+WatchlistService -> WatchlistRepo : exists(user_id, product_id)
+activate WatchlistRepo
+WatchlistRepo -> DB : SELECT 1 FROM watchlist\nWHERE user_id = :user_id\n  AND product_id = :product_id
+activate DB
+DB --> WatchlistRepo : Boolean result
+deactivate DB
+deactivate WatchlistRepo
+
+alt Product not in watchlist
+    ' Add to watchlist
+    WatchlistService -> WatchlistRepo : insert(user_id, product_id)
+    activate WatchlistRepo
+    WatchlistRepo -> DB : INSERT INTO watchlist\n(user_id, product_id)\nVALUES (:user_id, :product_id)
+    note right
+      Composite PK: (user_id, product_id)
+      Prevents duplicates automatically
+    end note
+    activate DB
+    DB --> WatchlistRepo : Inserted
+    deactivate DB
+    deactivate WatchlistRepo
+    
+    WatchlistService --> Controller : {success: true, message: "Đã thêm vào watchlist"}
+    deactivate WatchlistService
+    
+    Controller -> Browser : HTTP 201 Created\n{in_watchlist: true}
+    deactivate Controller
+    
+    Browser -> Browser : Update UI:\n- Button text: "❤️ Đã thêm" (red heart)\n- Show toast: "Đã thêm vào danh sách theo dõi"
+
+else Product already in watchlist
+    WatchlistService --> Controller : {success: false, message: "Sản phẩm đã có trong watchlist"}
+    deactivate WatchlistService
+    Controller -> Browser : HTTP 409 Conflict
+    deactivate Controller
+    Browser -> Bidder : Show message: "Sản phẩm đã có trong danh sách theo dõi"
+end
+
+== Operation 2: Remove from Watchlist ==
+
+Bidder -> Browser : Click "Xóa khỏi Watch List" (or toggle button)
+Browser -> Controller : DELETE /products/:product_id/watchlist
+
+activate Controller
+Controller -> Controller : Authenticate user → get user_id
+Controller -> WatchlistService : removeFromWatchlist(user_id, product_id)
+activate WatchlistService
+
+WatchlistService -> WatchlistRepo : delete(user_id, product_id)
+activate WatchlistRepo
+WatchlistRepo -> DB : DELETE FROM watchlist\nWHERE user_id = :user_id\n  AND product_id = :product_id
+activate DB
+DB --> WatchlistRepo : Rows affected (0 or 1)
+deactivate DB
+deactivate WatchlistRepo
+
+alt Deleted successfully (rows > 0)
+    WatchlistService --> Controller : {success: true, message: "Đã xóa khỏi watchlist"}
+    deactivate WatchlistService
+    Controller -> Browser : HTTP 200 OK\n{in_watchlist: false}
+    deactivate Controller
+    Browser -> Browser : Update UI:\n- Button text: "🤍 Thêm vào watchlist" (white heart)\n- Show toast: "Đã xóa khỏi danh sách theo dõi"
+
+else Not found (rows = 0)
+    WatchlistService --> Controller : {success: false, message: "Không tìm thấy"}
+    deactivate WatchlistService
+    Controller -> Browser : HTTP 404 Not Found
+    deactivate Controller
+end
+
+== Operation 3: View My Watchlist ==
+
+Bidder -> Browser : Navigate to "Danh sách theo dõi" page
+Browser -> Controller : GET /watchlist
+
+activate Controller
+Controller -> Controller : Authenticate user → get user_id
+Controller -> WatchlistService : getWatchlist(user_id)
+activate WatchlistService
+
+WatchlistService -> WatchlistRepo : findByUserId(user_id)
+activate WatchlistRepo
+WatchlistRepo -> DB : SELECT p.product_id, p.name, p.thumbnail_url,\n  p.current_price, p.end_time, p.bid_count,\n  p.status,\n  c.name as category_name,\n  CASE\n    WHEN p.end_time < CURRENT_TIMESTAMP THEN 'expired'\n    WHEN p.status = 'sold' THEN 'sold'\n    WHEN p.status = 'active' THEN 'active'\n    ELSE 'unavailable'\n  END as display_status\nFROM watchlist w\nJOIN products p ON w.product_id = p.product_id\nJOIN categories c ON p.category_id = c.category_id\nWHERE w.user_id = :user_id\nORDER BY\n  CASE WHEN p.status = 'active' AND p.end_time > CURRENT_TIMESTAMP THEN 0 ELSE 1 END,\n  p.end_time ASC
+note right
+  Sort priority:
+  1. Active products first
+  2. By end_time (soonest first)
+  
+  Display status:
+  - active: Show countdown, "Đặt giá" button
+  - expired: Gray out, "Đã hết hạn"
+  - sold: "Đã bán"
+end note
+activate DB
+DB --> WatchlistRepo : List of watchlist products
+deactivate DB
+deactivate WatchlistRepo
+
+WatchlistService --> Controller : List of products with status
+deactivate WatchlistService
+
+Controller -> Browser : Render watchlist page with products
+deactivate Controller
+
+Browser -> Bidder : Display watchlist grid:\n- Product cards with status\n- Remove button (❌) on each card\n- Filter: "Đang diễn ra" / "Đã kết thúc"
+
+== Alternative Flow: Toggle (Add/Remove in one action) ==
+
+note right of Browser
+  **Toggle Implementation:**
+  
+  Frontend:
+  - Single button: "❤️ Đã thêm" or "🤍 Thêm vào watchlist"
+  - On click: Check current state
+  - If in_watchlist = true → Call DELETE
+  - If in_watchlist = false → Call POST
+  
+  Backend can also implement:
+  POST /products/:product_id/watchlist/toggle
+  - Check exists → delete if true, insert if false
+  - Return new state: {in_watchlist: boolean}
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Table:**
+  - watchlist(user_id, product_id)
+    * PK: PRIMARY KEY (user_id, product_id)
+    * FK: user_id → users(user_id)
+    * FK: product_id → products(product_id)
+    * No timestamp needed (simple tracking)
+  
+  **Business Rules:**
+  - Bidder can add any active product to watchlist
+  - Can add even if auction ended (for reference)
+  - Cannot add own products (seller)
+  - Composite PK prevents duplicates automatically
+  
+  **UI/UX:**
+  - Heart icon toggle: white (not in) ↔ red (in watchlist)
+  - Show count: "15 người đang theo dõi"
+  - Email notification: "Sản phẩm bạn theo dõi sắp hết hạn"
+  
+  **Performance:**
+  - Index: (user_id) for fast user watchlist lookup
+  - Index: (product_id) for counting watchers
+  - Consider adding created_at for "Theo dõi từ X ngày trước"
+  
+  **Notifications (future):**
+  - Email when auction ending soon (1 hour)
+  - Email when new bid on watched product
+  - Push notification: "Giá đấu mới: 150,000đ"
+  
+  **Analytics:**
+  - Track watchlist count per product
+  - Popular products: Most watchlisted
+  - Conversion rate: watchlist → bid
+end note
+
+@enduml

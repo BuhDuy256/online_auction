@@ -1,0 +1,202 @@
+@startuml StateChartUserStatus
+' --- State Chart Diagram: User Account Status Flow ---
+' Reference: UC-01 (Registration), UC-10 (Upgrade), Security features
+' Database: users.status ENUM
+' Features: Email verification, account upgrades, suspension
+
+[*] --> PendingVerification : User registers\n(UC-01 Phase 1)
+
+state "Pending Verification" as PendingVerification #LightYellow
+note right of PendingVerification
+  **Initial State:**
+  - User submitted registration form
+  - Email sent with OTP code
+  - Password hashed in database
+  - Default role: none assigned yet
+  
+  **Restrictions:**
+  - Cannot login
+  - Cannot bid/sell/comment
+  - OTP expires in 10 minutes
+  
+  **Data:**
+  - user_otps table: OTP code stored
+  - users.status = 'pending_verification'
+end note
+
+PendingVerification --> Active : User verifies email\nwith OTP code\n(UC-01 Phase 2)
+note on link
+  Verification successful:
+  - OTP code matched
+  - Within 10-minute window
+  - Assign default role: 'bidder'
+  - Enable login
+end note
+
+state "Active" as Active #LightGreen
+note right of Active
+  **Normal Operating State:**
+  - User can login (UC-02)
+  - Bidder: Can bid, watchlist, comment (UC-05, UC-06, UC-07)
+  - Seller: Can post products, manage items (UC-08)
+  - Can request upgrade to seller (UC-10)
+  
+  **Permissions:**
+  - Based on users_roles table
+  - Can have multiple roles (bidder + seller)
+  - Rating tracked (positive/negative reviews)
+end note
+
+Active --> Active : Continue normal\noperations
+
+' === Upgrade Flow ===
+
+Active --> PendingUpgrade : Bidder submits\nupgrade request\n(UC-10)
+note on link
+  Upgrade to Seller:
+  - Fill upgrade form
+  - Upload verification docs
+  - Status temporarily marked
+  - Awaits admin approval
+end note
+
+state "Pending Upgrade" as PendingUpgrade #LightBlue
+note right of PendingUpgrade
+  **Awaiting Admin Review:**
+  - Upgrade request created
+  - Documents under review
+  - Request expires in 7 days
+  - Still can use as bidder
+  
+  **Data:**
+  - upgrade_requests table
+  - status = 'pending'
+  - Admin notification sent
+end note
+
+PendingUpgrade --> Active : Admin approves\n(UC-10)
+note on link
+  Approval:
+  - Add 'seller' role
+  - users_roles: (user_id, seller_role_id)
+  - Can now post products
+  - Notification sent
+end note
+
+PendingUpgrade --> Active : Admin rejects\nOR\n7 days timeout
+note on link
+  Rejection/Timeout:
+  - Stays as bidder only
+  - Can request again later
+  - Reason provided (if rejected)
+end note
+
+' === Suspension Flow ===
+
+Active --> Suspended : Admin suspends\nOR\nSecurity violation
+note on link
+  Reasons for suspension:
+  - Multiple failed login attempts (5+)
+  - Fraudulent activity detected
+  - Policy violations
+  - Negative rating too high
+  - Admin manual suspension
+end note
+
+PendingVerification --> Suspended : Failed verifications\n(3+ attempts)
+note on link
+  OTP abuse prevention:
+  - Too many wrong OTP codes
+  - Suspected bot/spam
+  - Email blacklisted
+end note
+
+state "Suspended" as Suspended #LightCoral
+note right of Suspended
+  **Account Locked:**
+  - Cannot login (UC-02 blocks)
+  - All operations disabled
+  - Active sessions terminated
+  - Reviews/bids still visible
+  
+  **Reasons (stored in users table):**
+  - failed_login_attempts >= 5
+  - Admin action (abuse, fraud)
+  - Pending investigation
+  
+  **Resolution:**
+  - Contact admin
+  - Verify identity
+  - Resolve violation
+end note
+
+Suspended --> Active : Admin reactivates\nOR\nSecurity cleared
+note on link
+  Reactivation:
+  - Admin reviews case
+  - User appeals successfully
+  - Reset failed_login_attempts = 0
+  - Restore access
+end note
+
+' === Account Deletion (Future) ===
+
+Active --> [*] : User deletes account\n(GDPR right)
+Suspended --> [*] : Permanent ban
+
+note on link
+  Account deletion:
+  - Anonymize personal data
+  - Keep reviews/transactions
+  - Cannot be undone
+end note
+
+' === Database Mapping ===
+
+note bottom
+  **Database Enum Mapping:**
+  users.status ENUM(
+    'pending_verification',  → Pending Verification
+    'active',                → Active
+    'pending_upgrade',       → Pending Upgrade
+    'suspended'              → Suspended
+  )
+  
+  **Status Transitions (allowed):**
+  pending_verification → active (OTP verified)
+  pending_verification → suspended (abuse)
+  active → pending_upgrade (request upgrade)
+  active → suspended (security/admin)
+  pending_upgrade → active (approved/rejected/timeout)
+  suspended → active (admin reactivates)
+  
+  **Status Transitions (NOT allowed):**
+  ❌ pending_verification → pending_upgrade (must verify first)
+  ❌ suspended → pending_verification (cannot re-register)
+  
+  **Business Rules:**
+  - Default status: 'pending_verification' on registration
+  - Default role: 'bidder' after verification
+  - Can have multiple roles via users_roles table
+  - Suspended users: login blocked in UC-02
+  - Failed login attempts tracked: 5+ → auto suspend
+  
+  **Related Use Cases:**
+  - UC-01: Đăng ký (pending_verification → active)
+  - UC-02: Đăng nhập (checks status = 'active')
+  - UC-10: Duyệt nâng cấp (active → pending_upgrade → active)
+  
+  **Security Features:**
+  - OTP verification (10-minute expiration)
+  - Password reset via OTP (user_otps.purpose = 'reset_password')
+  - Failed login tracking (auto-suspend after 5 attempts)
+  - Last login timestamp (users.last_login_at)
+  
+  **Rating System:**
+  - users.positive_reviews (incremented on +1 review)
+  - users.negative_reviews (incremented on -1 review)
+  - Rating affects bidding permissions (UC-05)
+  - Cannot bid if rating < 80% (configurable)
+end note
+
+@enduml

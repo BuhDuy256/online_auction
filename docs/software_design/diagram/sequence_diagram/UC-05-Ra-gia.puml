@@ -1,0 +1,270 @@
+@startuml UC05_RaGia
+' --- Sequence Diagram: Ra giá (Manual Bid) ---
+' Database Schema: bids, auto_bids, products, users, product_rejections, system_settings
+' Reference: Section 2.2, 6.2 (Project Description)
+' Features: Rating check, auto-extend auction, auto-bidding system, email notifications
+
+autonumber
+actor Bidder
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Auction Service" as AuctionService
+participant "Product Repository" as ProductRepo
+participant "User Repository" as UserRepo
+participant "Bid Repository" as BidRepo
+participant "Auto Bid Service" as AutoBidService
+participant "Email Service" as EmailService
+participant "Settings Service" as SettingsService
+database "Database" as DB
+
+== Main Flow: Place Manual Bid ==
+
+Bidder -> Browser : Nhập số tiền, nhấn "Ra giá"
+note right
+  Hệ thống đề nghị giá hợp lệ:
+  suggested_bid = current_price + step_price
+end note
+
+Browser -> Controller : POST /product/{product_id}/bid\n{amount: bid_amount}
+
+activate Controller
+Controller -> AuctionService : placeBid(bidder_id, product_id, amount, is_auto=false)
+activate AuctionService
+
+' 1. Get product details
+AuctionService -> ProductRepo : getProduct(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT p.*, u.full_name as seller_name\nFROM products p\nJOIN users u ON p.seller_id = u.user_id\nWHERE p.product_id = :product_id
+activate DB
+DB --> ProductRepo : Product details
+deactivate DB
+deactivate ProductRepo
+
+' 2. Business logic validations
+AuctionService -> AuctionService : Validate business rules
+
+alt Validation Checks
+
+    ' Check 1: Product status
+    alt product.status != 'active'
+        AuctionService --> Controller : Error: "Product is not available for bidding"
+        Controller -> Browser : Display error
+        Browser -> Bidder : "Sản phẩm không còn đấu giá"
+    end
+    
+    ' Check 2: Auction not expired
+    alt product.end_time <= CURRENT_TIMESTAMP
+        AuctionService --> Controller : Error: "Auction has ended"
+        Controller -> Browser : Display error
+        Browser -> Bidder : "Phiên đấu giá đã kết thúc"
+    end
+    
+    ' Check 3: Cannot bid on own product
+    alt product.seller_id = bidder_id
+        AuctionService --> Controller : Error: "Cannot bid on your own product"
+        Controller -> Browser : Display error
+        Browser -> Bidder : "Không thể đấu giá sản phẩm của chính mình"
+    end
+    
+    ' Check 4: Not in rejection list
+    AuctionService -> ProductRepo : isRejected(product_id, bidder_id)
+    activate ProductRepo
+    ProductRepo -> DB : SELECT rejection_id FROM product_rejections\nWHERE product_id = :product_id AND bidder_id = :bidder_id
+    activate DB
+    DB --> ProductRepo : NULL or rejection_id
+    deactivate DB
+    deactivate ProductRepo
+    
+    alt bidder is rejected
+        AuctionService --> Controller : Error: "You are not allowed to bid on this product"
+        Controller -> Browser : Display error
+        Browser -> Bidder : "Bạn đã bị từ chối đấu giá sản phẩm này"
+    end
+    
+    ' Check 5: Bidder rating >= 80% (Section 2.2)
+    AuctionService -> UserRepo : getUserRating(bidder_id)
+    activate UserRepo
+    UserRepo -> DB : SELECT positive_reviews, negative_reviews\nFROM users WHERE user_id = :bidder_id
+    activate DB
+    DB --> UserRepo : {positive_reviews, negative_reviews}
+    deactivate DB
+    deactivate UserRepo
+    
+    AuctionService -> AuctionService : Calculate rating:\ntotal = positive_reviews + negative_reviews\nrating_pct = (positive_reviews / total) * 100
+    
+    ' Get min rating threshold from settings
+    AuctionService -> SettingsService : getSetting('min_rating_percentage')
+    activate SettingsService
+    SettingsService -> DB : SELECT setting_value FROM system_settings\nWHERE setting_key = 'min_rating_percentage'
+    activate DB
+    DB --> SettingsService : '80'
+    deactivate DB
+    deactivate SettingsService
+    
+    alt total > 0 AND rating_pct < min_rating (80%)
+        AuctionService --> Controller : Error: "Your rating is below 80%"
+        Controller -> Browser : Display error
+        Browser -> Bidder : "Điểm đánh giá của bạn dưới 80%, không thể đấu giá"
+    end
+    
+    ' Check 6: Bid amount validation
+    AuctionService -> AuctionService : min_bid = product.current_price + product.step_price
+    
+    alt amount < min_bid
+        AuctionService --> Controller : Error: "Bid amount too low"
+        Controller -> Browser : Display error with suggested bid
+        Browser -> Bidder : "Giá đặt tối thiểu: {min_bid}"
+    end
+    
+end
+
+' All validations passed - Place bid
+AuctionService -> BidRepo : saveBid(bidder_id, product_id, amount, is_auto=false)
+activate BidRepo
+BidRepo -> DB : INSERT INTO bids\n(product_id, bidder_id, amount, is_auto, created_at)\nVALUES (:product_id, :bidder_id, :amount, false, CURRENT_TIMESTAMP)
+activate DB
+DB --> BidRepo : bid_id (newly created)
+deactivate DB
+
+note right of DB
+  **DB Trigger: update_product_on_bid_insert**
+  Automatically executes after INSERT INTO bids:
+  1. UPDATE products SET
+     - current_price = NEW.amount
+     - highest_bidder_id = NEW.bidder_id
+     - bid_count = bid_count + 1
+     WHERE product_id = NEW.product_id
+end note
+
+deactivate BidRepo
+
+' Check for auto-extend (Section 3.1)
+AuctionService -> SettingsService : getSetting('auto_extend_threshold_minutes')
+activate SettingsService
+SettingsService -> DB : SELECT setting_value FROM system_settings\nWHERE setting_key = 'auto_extend_threshold_minutes'
+activate DB
+DB --> SettingsService : '5' (minutes)
+deactivate DB
+deactivate SettingsService
+
+AuctionService -> SettingsService : getSetting('auto_extend_duration_minutes')
+activate SettingsService
+SettingsService -> DB : SELECT setting_value FROM system_settings\nWHERE setting_key = 'auto_extend_duration_minutes'
+activate DB
+DB --> SettingsService : '10' (minutes)
+deactivate DB
+deactivate SettingsService
+
+AuctionService -> AuctionService : time_remaining = product.end_time - CURRENT_TIMESTAMP
+
+alt product.auto_extend = true AND time_remaining <= 5 minutes
+    
+    note right of DB
+      **DB Trigger: auto_extend_on_late_bid**
+      Automatically extends auction:
+      UPDATE products SET
+        end_time = end_time + INTERVAL '10 minutes'
+      WHERE product_id = NEW.product_id
+        AND auto_extend = true
+        AND end_time - CURRENT_TIMESTAMP <= INTERVAL '5 minutes'
+    end note
+    
+    AuctionService -> AuctionService : Log: "Auction auto-extended by 10 minutes"
+end
+
+' Process Auto-Bids (Section 6.2)
+AuctionService -> AutoBidService : processAutoBids(product_id, new_bid_amount)
+activate AutoBidService
+
+AutoBidService -> BidRepo : getActivetoBids(product_id, exclude_bidder_id=bidder_id)
+activate BidRepo
+BidRepo -> DB : SELECT ab.auto_bid_id, ab.bidder_id, ab.max_amount, ab.created_at\nFROM auto_bids ab\nWHERE ab.product_id = :product_id\nAND ab.bidder_id != :current_bidder_id\nAND ab.max_amount > :new_bid_amount\nORDER BY ab.max_amount DESC, ab.created_at ASC
+activate DB
+DB --> BidRepo : List of auto_bids that can compete
+deactivate DB
+deactivate BidRepo
+
+alt Auto-bids exist that can outbid current bid
+
+    AutoBidService -> AutoBidService : Find highest auto-bid:\n- Sort by max_amount DESC\n- Tie-breaker: earlier created_at wins
+    
+    AutoBidService -> AutoBidService : Calculate counter_bid:\ncounter_bid = MIN(highest_auto_bid.max_amount, new_bid_amount + step_price)
+    
+    ' Place automatic counter-bid
+    AutoBidService -> BidRepo : saveBid(auto_bidder_id, product_id, counter_bid, is_auto=true)
+    activate BidRepo
+    BidRepo -> DB : INSERT INTO bids\n(product_id, bidder_id, amount, is_auto, created_at)\nVALUES (:product_id, :auto_bidder_id, :counter_bid, true, CURRENT_TIMESTAMP)
+    activate DB
+    DB --> BidRepo : bid_id
+    note right: Trigger updates products table again
+    deactivate DB
+    deactivate BidRepo
+    
+    AutoBidService -> AutoBidService : Log: "Auto-bid placed for bidder #{auto_bidder_id}"
+    
+else No competing auto-bids
+    AutoBidService -> AutoBidService : Current bidder wins (for now)
+end
+
+deactivate AutoBidService
+
+' Send email notifications (Section 6.1)
+AuctionService -> EmailService : notifyBidPlaced(product_id, new_bidder_id, new_amount)
+activate EmailService
+
+' Notify seller
+EmailService -> EmailService : Send email to seller:\n"Sản phẩm '{product_name}' có lượt ra giá mới: {amount}"
+
+' Notify previous highest bidder (if outbid)
+alt previous_highest_bidder_id EXISTS AND != new_bidder_id
+    EmailService -> EmailService : Send email to previous bidder:\n"Bạn đã bị vượt giá trên sản phẩm '{product_name}'"
+end
+
+' Notify new bidder (confirmation)
+EmailService -> EmailService : Send email to new bidder:\n"Bạn đã ra giá thành công: {amount}"
+
+deactivate EmailService
+
+AuctionService --> Controller : {success: true, message: "Bid placed successfully", new_price: current_price}
+deactivate AuctionService
+
+Controller -> Browser : HTTP 200 OK\nReturn updated product data (current_price, highest_bidder, bid_count)
+deactivate Controller
+
+Browser -> Bidder : Hiển thị thông báo thành công\nCập nhật giá hiện tại và số lượt đấu giá
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - bids(bid_id, product_id, bidder_id, amount, is_auto, created_at)
+  - auto_bids(auto_bid_id, product_id, bidder_id, max_amount, created_at)
+    * UNIQUE(product_id, bidder_id)
+  - products(current_price, highest_bidder_id, bid_count, 
+    auto_extend, end_time)
+  - users(positive_reviews, negative_reviews)
+  - product_rejections(product_id, bidder_id)
+  - system_settings(setting_key, setting_value)
+  
+  **Triggers:**
+  - update_product_on_bid_insert: Updates products table
+  - auto_extend_on_late_bid: Extends auction if within threshold
+  
+  **Auto-Bidding Logic (Section 6.2):**
+  - Bidder sets max_amount they're willing to pay
+  - System auto-bids minimum needed to win
+  - Tie-breaker: Earlier created_at wins
+  - Counter-bid = MIN(max_amount, current_bid + step_price)
+  
+  **Rating Calculation (Section 2.2):**
+  - rating% = (positive_reviews / total_reviews) * 100
+  - Must be >= 80% to bid (configurable in system_settings)
+  - New users (total_reviews = 0) allowed if seller permits
+  
+  **Email Notifications (Section 6.1):**
+  - Seller: New bid placed
+  - Previous highest bidder: Outbid notification
+  - New bidder: Bid confirmation
+end note
+
+@enduml

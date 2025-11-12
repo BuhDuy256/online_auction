@@ -1,0 +1,220 @@
+@startuml UC02_DangNhapSocial
+' --- Sequence Diagram: Social Login (OAuth 2.0 / OpenID Connect) ---
+' Applies to: Google, Facebook, Github, Twitter, LinkedIn, etc.
+' Implementation: Passport.js with strategy pattern
+' Reference: Section 5.1 (Đăng nhập - Khuyến khích social login)
+' Database: users table
+
+autonumber
+actor Guest
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Auth Service\n(Passport.js)" as AuthService
+participant "User Repository" as UserRepo
+participant "OAuth Provider\n(Google/Facebook/Github)" as OAuthProvider
+database "Database" as DB
+
+== Main Flow: Social Login ==
+
+Guest -> Browser : Click "Đăng nhập với [Provider]"
+note right
+  Providers supported:
+  - Google (OAuth 2.0)
+  - Facebook (OAuth 2.0)
+  - Github (OAuth 2.0)
+  - Twitter (OAuth 1.0a)
+  - LinkedIn, etc.
+  
+  All use same OAuth flow pattern
+end note
+
+Browser -> Controller : GET /auth/:provider\n(provider = 'google' | 'facebook' | 'github' | ...)
+
+activate Controller
+Controller -> AuthService : passport.authenticate(provider)
+activate AuthService
+
+' Step 1: Redirect to OAuth provider
+AuthService -> Browser : Redirect to OAuth provider\nwith client_id, redirect_uri, scope
+deactivate AuthService
+deactivate Controller
+
+Browser -> OAuthProvider : Authorization request
+activate OAuthProvider
+OAuthProvider -> Browser : Display login/consent screen
+deactivate OAuthProvider
+
+Guest -> Browser : Enter credentials & authorize
+Browser -> OAuthProvider : Submit credentials
+activate OAuthProvider
+
+alt Authentication successful
+    OAuthProvider -> Browser : Redirect to callback URL:\n/auth/:provider/callback?code=:authCode
+    deactivate OAuthProvider
+    
+    Browser -> Controller : GET /auth/:provider/callback?code=:authCode
+    activate Controller
+    Controller -> AuthService : passport.authenticate(provider, {code: authCode})
+    activate AuthService
+    
+    ' Step 2: Exchange code for access token
+    AuthService -> OAuthProvider : POST /oauth/token\n{code, client_id, client_secret, redirect_uri}
+    activate OAuthProvider
+    OAuthProvider --> AuthService : {access_token, token_type, expires_in}
+    deactivate OAuthProvider
+    
+    ' Step 3: Fetch user profile
+    AuthService -> OAuthProvider : GET /api/user\nAuthorization: Bearer :access_token
+    activate OAuthProvider
+    OAuthProvider --> AuthService : User profile:\n{id, email, name, avatar_url}
+    deactivate OAuthProvider
+    
+    ' Step 4: Find or create user
+    AuthService -> UserRepo : findUserByEmail(profile.email)
+    activate UserRepo
+    UserRepo -> DB : SELECT user_id, email, full_name, status\nFROM users\nWHERE email = :email
+    activate DB
+    DB --> UserRepo : User or NULL
+    deactivate DB
+    deactivate UserRepo
+    
+    alt User exists (email found)
+        AuthService -> AuthService : Verify user.status = 'active'
+        
+        alt status = 'suspended' or 'pending_verification'
+            AuthService --> Controller : Error: "Account suspended or not verified"
+            Controller -> Browser : Redirect to /error?msg=account_suspended
+            Browser -> Guest : Display: "Tài khoản bị tạm khóa hoặc chưa xác thực"
+        else status = 'active'
+            ' Update last login
+            AuthService -> UserRepo : updateLastLogin(user_id)
+            activate UserRepo
+            UserRepo -> DB : UPDATE users\nSET last_login_at = CURRENT_TIMESTAMP\nWHERE user_id = :user_id
+            activate DB
+            DB --> UserRepo : Updated
+            deactivate DB
+            deactivate UserRepo
+            
+            ' Optional: Update OAuth provider ID and avatar
+            AuthService -> UserRepo : updateOAuthProfile(user_id, provider, provider_id, avatar_url)
+            activate UserRepo
+            UserRepo -> DB : UPDATE users\nSET :provider_id = :id, avatar_url = :avatar\nWHERE user_id = :user_id
+            note right
+              Store provider ID in column like:
+              - google_id
+              - facebook_id
+              - github_id
+              (if table schema has these columns)
+            end note
+            activate DB
+            DB --> UserRepo : Updated
+            deactivate DB
+            deactivate UserRepo
+            
+            AuthService --> Controller : User authenticated: {user_id, email, roles}
+        end
+        
+    else User not exists (new user)
+        ' Create new user account
+        AuthService -> UserRepo : createUser(email, full_name, provider, provider_id)
+        activate UserRepo
+        UserRepo -> DB : INSERT INTO users\n(email, full_name, password, status, created_at)\nVALUES (:email, :full_name, NULL, 'active', CURRENT_TIMESTAMP)\nRETURNING user_id
+        note right
+          - password = NULL (no password for OAuth users)
+          - status = 'active' (skip email verification)
+          - Can login only via OAuth
+        end note
+        activate DB
+        DB --> UserRepo : user_id (newly created)
+        deactivate DB
+        
+        ' Assign default role 'bidder'
+        UserRepo -> DB : INSERT INTO users_roles\n(user_id, role_id)\nVALUES (:user_id, (SELECT role_id FROM roles WHERE name = 'bidder'))
+        activate DB
+        DB --> UserRepo : Role assigned
+        deactivate DB
+        deactivate UserRepo
+        
+        AuthService --> Controller : New user created: {user_id, email, roles: ['bidder']}
+    end
+    
+    ' Step 5: Create session/JWT
+    Controller -> Controller : Create session or JWT token:\n- userId, email, roles\n- session TTL or JWT expiration
+    
+    Controller -> Browser : Set-Cookie: session_id=:token\nRedirect to /
+    deactivate AuthService
+    deactivate Controller
+    
+    Browser -> Guest : Redirect to homepage (logged in)
+
+else Authentication failed
+    OAuthProvider -> Browser : Redirect to callback with error:\n/auth/:provider/callback?error=access_denied
+    Browser -> Controller : GET with error parameter
+    activate Controller
+    Controller -> Browser : Redirect to /login?error=oauth_failed
+    deactivate Controller
+    Browser -> Guest : Display: "Đăng nhập thất bại, vui lòng thử lại"
+end
+
+== Alternative Flow: Link existing account ==
+
+note right of Browser
+  **Use case:** User has account with email/password,
+  wants to link social login for convenience.
+  
+  **Flow:**
+  1. User already logged in via email
+  2. Go to Profile Settings → Connect Social Account
+  3. Click "Connect [Provider]"
+  4. OAuth flow same as above
+  5. On callback: Link provider_id to existing user_id
+     UPDATE users SET google_id = :id WHERE user_id = :current_user
+  
+  **Database schema suggestion:**
+  - users.google_id (VARCHAR, Nullable, UNIQUE)
+  - users.facebook_id (VARCHAR, Nullable, UNIQUE)
+  - users.github_id (VARCHAR, Nullable, UNIQUE)
+  
+  Allows multiple login methods per account.
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - users(user_id, email, full_name, password, status,
+    google_id, facebook_id, github_id, avatar_url,
+    last_login_at, created_at)
+  - users_roles(user_id, role_id)
+  - roles(role_id, name)
+  
+  **OAuth Provider Setup (Passport.js):**
+  - passport-google-oauth20
+  - passport-facebook
+  - passport-github2
+  - passport-twitter
+  
+  **Business Rules:**
+  - OAuth users: password = NULL, status = 'active'
+  - Skip email verification (provider already verified)
+  - Default role: 'bidder'
+  - Can link multiple OAuth providers to one account
+  
+  **Session Management:**
+  - Store JWT in httpOnly cookie
+  - TTL: 7 days (configurable)
+  - Refresh token for long-term access
+  
+  **Security:**
+  - Validate state parameter (CSRF protection)
+  - Verify redirect_uri whitelist
+  - Check email from provider is verified
+  - Rate limit: Max 5 login attempts per IP per minute
+  
+  **Email Uniqueness:**
+  - If OAuth email matches existing account → Login
+  - If email already used by another OAuth provider → Error
+    "Email đã được sử dụng bởi phương thức đăng nhập khác"
+end note
+
+@enduml

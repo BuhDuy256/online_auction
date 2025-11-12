@@ -1,0 +1,211 @@
+@startuml StateChartUpgradeRequestStatus
+' --- State Chart Diagram: Upgrade Request Status Flow ---
+' Reference: UC-10 (Duyệt nâng cấp tài khoản)
+' Database: upgrade_requests.status ENUM
+' Features: 7-day expiration, admin approval workflow
+
+[*] --> Pending : Bidder submits\nupgrade request\n(UC-10 Phase 1)
+
+state "Pending" as Pending #LightYellow
+note right of Pending
+  **Awaiting Admin Review:**
+  - Request created with documents
+  - expires_at = created_at + 7 days
+  - Admin notified (email + in-app)
+  - User status: active (can still bid)
+  
+  **Data:**
+  - upgrade_requests table
+  - user_id, status='pending'
+  - created_at, expires_at timestamps
+  - Optional: attached documents URL
+  
+  **User Experience:**
+  - Badge: "Yêu cầu đang chờ xử lý"
+  - Cannot submit duplicate request
+  - Can cancel request before review
+end note
+
+Pending --> Approved : Admin approves\n(UC-10 Phase 3)
+note on link
+  Approval Process:
+  - Admin reviews documents
+  - Verifies user eligibility
+  - Clicks "Phê duyệt"
+  
+  Actions:
+  - Add role: users_roles(user_id, seller_role_id)
+  - Update user.status = 'active'
+  - Send notification + email
+end note
+
+state "Approved" as Approved #LightGreen
+note right of Approved
+  **Success End State:**
+  - User granted 'seller' role
+  - Can now post products (UC-08)
+  - Has both 'bidder' + 'seller' roles
+  - Request archived
+  
+  **Notifications:**
+  - Email: "Chúc mừng! Tài khoản đã được nâng cấp"
+  - In-app: Link to "Đăng sản phẩm"
+  
+  **Permission Changes:**
+  - ✅ Can create products (UC-08)
+  - ✅ Can manage own products
+  - ✅ Can chat with winners (UC-13)
+  - ✅ Still can bid on other products
+end note
+
+Approved --> [*]
+
+Pending --> Rejected : Admin rejects\n(UC-10 Phase 4)
+note on link
+  Rejection Process:
+  - Admin reviews & denies
+  - Provides rejection reason
+  
+  Reasons:
+  - Incomplete documents
+  - Suspicious activity
+  - Age requirement not met
+  - Business license invalid
+end note
+
+state "Rejected" as Rejected #LightCoral
+note right of Rejected
+  **Rejection End State:**
+  - User remains as 'bidder' only
+  - Reason stored for reference
+  - Can request again after 30 days
+  
+  **Notifications:**
+  - Email: "Yêu cầu nâng cấp bị từ chối"
+  - Reason: e.g., "Giấy tờ chưa đầy đủ"
+  - Suggestion: "Vui lòng bổ sung..."
+  
+  **Next Steps:**
+  - User can re-submit after cooldown
+  - Fix issues mentioned in rejection
+end note
+
+Rejected --> [*]
+
+Pending --> Expired : 7 days passed\nno admin action
+note on link
+  Auto-expiration:
+  - created_at + 7 days < NOW()
+  - Cron job checks daily
+  - Auto-update status
+  
+  Reason:
+  - Admin workload backlog
+  - Request overlooked
+  - System auto-cleanup
+end note
+
+state "Expired" as Expired #LightGray
+note right of Expired
+  **Timeout End State:**
+  - Request not reviewed in time
+  - Auto-archived by system
+  - User can submit new request
+  
+  **Notifications:**
+  - Email: "Yêu cầu đã hết hạn"
+  - Suggestion: "Vui lòng gửi yêu cầu mới"
+  
+  **System Behavior:**
+  - Daily cron: UPDATE upgrade_requests
+    SET status='expired'
+    WHERE status='pending'
+    AND expires_at < CURRENT_TIMESTAMP
+end note
+
+Expired --> [*]
+
+' === User Cancellation ===
+
+Pending --> Cancelled : User cancels own request
+note on link
+  User-initiated cancellation:
+  - Before admin reviews
+  - Clicks "Hủy yêu cầu"
+  - No penalty
+end note
+
+state "Cancelled" as Cancelled #LightBlue
+note right of Cancelled
+  **User Cancellation:**
+  - User changed mind
+  - Decided not to upgrade
+  - Can re-submit anytime
+  
+  **No negative impact:**
+  - Not counted as rejection
+  - No cooldown period
+  - Clean cancellation
+end note
+
+Cancelled --> [*]
+
+' === Database Mapping ===
+
+note bottom
+  **Database Enum Mapping:**
+  upgrade_requests.status ENUM(
+    'pending',   → Pending (awaiting admin)
+    'approved',  → Approved (granted seller role)
+    'rejected',  → Rejected (admin denied)
+    'expired',   → Expired (7 days timeout)
+    'cancelled'  → Cancelled (user cancelled)
+  )
+  
+  **Status Transitions (allowed):**
+  pending → approved (admin action)
+  pending → rejected (admin action)
+  pending → expired (system auto after 7 days)
+  pending → cancelled (user action)
+  
+  **Status Transitions (NOT allowed):**
+  ❌ approved/rejected/expired/cancelled → pending (final states)
+  ❌ approved → rejected (cannot revert)
+  
+  **Business Rules:**
+  - expires_at = created_at + INTERVAL '7 days'
+  - Only ONE active request per user (UNIQUE constraint on user_id WHERE status='pending')
+  - User must wait 30 days before re-requesting after rejection
+  - No limit on re-requesting after expiration
+  - Admin cannot approve expired requests (must ask user to re-submit)
+  
+  **Related Tables:**
+  - users_roles: INSERT when approved
+    (user_id, role_id) VALUES (:user_id, (SELECT role_id FROM roles WHERE name='seller'))
+  - notifications: Created for all state changes
+  - users.status: Updated to 'active' on approval (if was 'pending_upgrade')
+  
+  **Related Use Cases:**
+  - UC-10: Duyệt nâng cấp tài khoản (all transitions)
+  - UC-08: Đăng sản phẩm (requires approved status)
+  
+  **Indexing:**
+  - INDEX (status, expires_at) - for cron job queries
+  - INDEX (user_id, status) - check user's active request
+  
+  **Cron Jobs:**
+  - Daily at midnight: Expire old requests
+    UPDATE upgrade_requests
+    SET status = 'expired'
+    WHERE status = 'pending'
+      AND expires_at < CURRENT_TIMESTAMP
+  
+  **Notifications:**
+  - pending: Notify admin (new request)
+  - approved: Notify user (success)
+  - rejected: Notify user (with reason)
+  - expired: Notify user (timeout)
+  - cancelled: No notification needed
+end note
+
+@enduml

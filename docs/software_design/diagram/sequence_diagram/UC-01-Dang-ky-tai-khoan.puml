@@ -1,0 +1,163 @@
+@startuml UC01_DangKyTaiKhoan
+' --- Sequence Diagram: Đăng ký tài khoản ---
+' Database Schema: users, user_otps, users_roles
+' Reference: Section 1.6 (Project Description)
+
+autonumber
+actor Guest
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Auth Service" as AuthService
+participant "User Repository" as UserRepo
+participant "OTP Service" as OtpService
+participant "Email Service" as EmailService
+database "Database" as DB
+
+== Phase 1: Submit Registration Form ==
+
+Guest -> Browser : Truy cập trang đăng ký
+Browser -> Controller : GET /register
+Controller -> Browser : Hiển thị form đăng ký với reCaptcha
+
+Guest -> Browser : Nhập: Họ tên, Email, Password, Địa chỉ\nvà hoàn thành reCaptcha
+Browser -> Controller : POST /register {full_name, email, password, address, captcha_token}
+
+activate Controller
+Controller -> AuthService : register(full_name, email, password, address, captcha_token)
+activate AuthService
+
+' Validate reCaptcha
+AuthService -> AuthService : Verify reCaptcha token
+
+' Check email uniqueness
+AuthService -> UserRepo : findByEmail(email)
+activate UserRepo
+UserRepo -> DB : SELECT user_id FROM users WHERE email = :email
+activate DB
+DB --> UserRepo : NULL (email chưa tồn tại)
+deactivate DB
+deactivate UserRepo
+
+' Hash password using bcrypt/scrypt
+AuthService -> AuthService : hash_password = bcrypt.hash(password)
+
+' Insert new user with status='pending_verification'
+AuthService -> UserRepo : createUser(full_name, email, hash_password, status='pending_verification')
+activate UserRepo
+UserRepo -> DB : INSERT INTO users\n(full_name, email, password, status, created_at)\nVALUES (:full_name, :email, :hash_password, 'pending_verification', CURRENT_TIMESTAMP)
+activate DB
+DB --> UserRepo : user_id (newly created)
+deactivate DB
+deactivate UserRepo
+
+' Generate OTP code (6-digit)
+AuthService -> OtpService : generateOTP(user_id, purpose='signup')
+activate OtpService
+OtpService -> OtpService : Generate 6-digit OTP code
+OtpService -> DB : INSERT INTO user_otps\n(user_id, otp_code, purpose, created_at, expires_at)\nVALUES (:user_id, :otp_code, 'signup', NOW(), NOW() + INTERVAL '10 minutes')
+activate DB
+DB --> OtpService : otp_id
+deactivate DB
+deactivate OtpService
+
+' Send OTP via email
+AuthService -> EmailService : sendOTP(email, otp_code)
+activate EmailService
+EmailService --> AuthService : Email sent successfully
+deactivate EmailService
+
+AuthService --> Controller : {success: true, user_id: user_id, message: "OTP sent to email"}
+deactivate AuthService
+
+Controller -> Browser : Redirect to /verify-email?user_id={user_id}
+deactivate Controller
+
+== Phase 2: Verify Email OTP ==
+
+Guest -> Browser : Nhập mã OTP nhận được qua email
+Browser -> Controller : POST /verify-email {user_id, otp_code}
+
+activate Controller
+Controller -> AuthService : verifyEmailOTP(user_id, otp_code)
+activate AuthService
+
+' Validate OTP
+AuthService -> OtpService : validateOTP(user_id, otp_code, purpose='signup')
+activate OtpService
+OtpService -> DB : SELECT * FROM user_otps\nWHERE user_id = :user_id\nAND otp_code = :otp_code\nAND purpose = 'signup'\nAND expires_at > CURRENT_TIMESTAMP\nAND consumed_at IS NULL
+activate DB
+DB --> OtpService : OTP record (valid)
+deactivate DB
+
+' Mark OTP as consumed
+OtpService -> DB : UPDATE user_otps\nSET consumed_at = CURRENT_TIMESTAMP\nWHERE otp_id = :otp_id
+activate DB
+DB --> OtpService : Updated
+deactivate DB
+deactivate OtpService
+
+' Update user status to 'active'
+AuthService -> UserRepo : updateUserStatus(user_id, status='active')
+activate UserRepo
+UserRepo -> DB : UPDATE users\nSET status = 'active'\nWHERE user_id = :user_id
+activate DB
+DB --> UserRepo : Updated
+deactivate DB
+deactivate UserRepo
+
+' Assign default 'bidder' role (RBAC)
+AuthService -> UserRepo : assignRole(user_id, role='bidder')
+activate UserRepo
+UserRepo -> DB : INSERT INTO users_roles (user_id, role_id)\nVALUES (:user_id, (SELECT role_id FROM roles WHERE name = 'bidder'))
+activate DB
+DB --> UserRepo : Role assigned
+deactivate DB
+deactivate UserRepo
+
+AuthService --> Controller : {success: true, message: "Email verified successfully"}
+deactivate AuthService
+
+' Create session and login
+Controller -> Controller : Create session for user_id
+Controller -> Browser : Redirect to home page (logged in)
+deactivate Controller
+
+Browser -> Guest : Hiển thị thông báo "Đăng ký thành công"
+
+== Alternative Flow: Email Already Exists ==
+
+note right of AuthService
+  **Alt 1: Email đã tồn tại**
+  - Return error: "Email already registered"
+  - Status: 400 Bad Request
+end note
+
+== Alternative Flow: Invalid OTP ==
+
+note right of OtpService
+  **Alt 2: OTP không hợp lệ**
+  - OTP hết hạn (expires_at < NOW())
+  - OTP đã được sử dụng (consumed_at NOT NULL)
+  - OTP code sai
+  - Return error: "Invalid or expired OTP"
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - users(user_id, full_name, email, password, 
+    status='pending_verification', created_at)
+  - user_otps(otp_id, user_id, otp_code, 
+    purpose='signup', expires_at, consumed_at)
+  - users_roles(user_id, role_id)
+  - roles(role_id, name='bidder')
+  
+  **Constraints:**
+  - users.email: UNIQUE
+  - Password hashed with bcrypt/scrypt
+  - OTP expires in 10 minutes
+  - UNIQUE(user_id, purpose) WHERE consumed_at IS NULL
+end note
+
+@enduml

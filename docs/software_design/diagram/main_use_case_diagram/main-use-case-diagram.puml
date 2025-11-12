@@ -49,6 +49,7 @@ rectangle "Hệ thống Sàn Đấu Giá Trực Tuyến" {
     ' --- UCs Tương tác (Bidder & Seller) ---
     usecase "(UC-12) Hoàn tất đơn hàng" as UC_CompleteOrder
     usecase "(UC-11) Đánh giá người dùng" as UC_Review
+    usecase "(UC-13) Chat đơn hàng" as UC_Chat
 
     ' --- UCs cho Admin ---
     usecase "(UC-09) Quản lý Danh mục" as UC_ManageCat
@@ -87,6 +88,8 @@ Bidder -- UC_CompleteOrder
 Seller -- UC_CompleteOrder
 Bidder -- UC_Review
 Seller -- UC_Review
+Bidder -- UC_Chat
+Seller -- UC_Chat
 
 ' Admin Connections
 Admin -- UC_ManageCat
@@ -101,6 +104,9 @@ UC_Login <.. UC_ForgotPass : <<extends>>
 
 ' Đánh giá người dùng là một phần "bắt buộc" (include) sau khi Hoàn tất đơn hàng
 UC_CompleteOrder .> UC_Review : <<include>>
+
+' Chat đơn hàng được sử dụng trong quá trình Hoàn tất đơn hàng
+UC_CompleteOrder .> UC_Chat : <<include>>
 
 ' Duyệt nâng cấp là một trường hợp "mở rộng" (extends) của Quản lý người dùng
 UC_ManageUser <.. UC_ApproveUpgrade : <<extends>>

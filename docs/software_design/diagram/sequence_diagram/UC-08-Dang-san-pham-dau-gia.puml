@@ -1,0 +1,227 @@
+@startuml UC08_DangSanPhamDauGia
+' --- Sequence Diagram: Đăng sản phẩm đấu giá ---
+' Database Schema: products, product_descriptions, product_images, categories
+' Reference: Section 3.1 (Project Description)
+' Features: Min 3 images, WYSIWYG description, auto_extend, FTS trigger
+
+autonumber
+actor Seller
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Image Service\n(Cloud Storage)" as ImageService
+participant "Product Service" as ProductService
+participant "Product Repository" as ProductRepo
+participant "Description Repository" as DescRepo
+participant "Image Repository" as ImageRepo
+database "Database" as DB
+
+== Main Flow: Create Auction Product ==
+
+Seller -> Browser : Truy cập trang "Đăng sản phẩm"
+Browser -> Controller : GET /products/new
+
+activate Controller
+Controller -> ProductService : getCategoriesAndSettings()
+activate ProductService
+ProductService -> DB : SELECT category_id, name, parent_id FROM categories
+activate DB
+DB --> ProductService : List of categories (2-level hierarchy)
+deactivate DB
+ProductService --> Controller : {categories, default_settings}
+deactivate ProductService
+Controller -> Browser : Render form with:\n- Category dropdown (2-level)\n- Image upload (min 3)\n- WYSIWYG editor (TinyMCE/Quill)\n- Auto-extend checkbox
+deactivate Controller
+
+Seller -> Browser : Điền thông tin:\n- Tên sản phẩm\n- Category (chọn child category)\n- Giá khởi điểm (start_price)\n- Bước giá (step_price)\n- Giá mua ngay (buy_now_price - optional)\n- Mô tả sản phẩm (WYSIWYG)\n- Upload 3+ ảnh\n- Có tự động gia hạn không?
+
+Seller -> Browser : Nhấn "Đăng sản phẩm"
+
+Browser -> Controller : POST /products\nContent-Type: multipart/form-data\n{\n  name, category_id, start_price, step_price,\n  buy_now_price, description, images[],\n  auto_extend\n}
+
+activate Controller
+Controller -> ProductService : createProduct(seller_id, product_data, image_files)
+activate ProductService
+
+' Validate seller role
+ProductService -> ProductService : Check seller has 'seller' role
+
+' Validate form data
+ProductService -> ProductService : Validate:\n- name NOT NULL\n- images.length >= 3 (Section 3.1)\n- start_price > 0\n- step_price > 0\n- buy_now_price >= start_price (if provided)\n- category exists and is child (parent_id NOT NULL)
+
+alt Validation failed
+    ProductService --> Controller : Error: "Validation failed"
+    Controller -> Browser : Display validation errors
+    Browser -> Seller : "Vui lòng kiểm tra lại thông tin"
+end
+
+' Upload images to cloud storage
+ProductService -> ImageService : uploadImages(image_files)
+activate ImageService
+ImageService -> ImageService : Upload to S3/Cloudinary/etc
+ImageService --> ProductService : [url1, url2, url3, ...]
+deactivate ImageService
+
+' Calculate end_time (7 days default from now)
+ProductService -> ProductService : end_time = NOW() + INTERVAL '7 days'
+
+' Insert product
+ProductService -> ProductRepo : createProduct(product_data)
+activate ProductRepo
+ProductRepo -> DB : INSERT INTO products (\n  category_id, seller_id, name, thumbnail_url,\n  current_price, buy_now_price, start_price, step_price,\n  start_time, end_time, auto_extend, status\n) VALUES (\n  :category_id, :seller_id, :name, :images[0],\n  :start_price, :buy_now_price, :start_price, :step_price,\n  CURRENT_TIMESTAMP, :end_time, :auto_extend, 'active'\n)
+activate DB
+DB --> ProductRepo : product_id (newly created)
+deactivate DB
+deactivate ProductRepo
+
+note right of DB
+  **Trigger: products_fts_update()**
+  Automatically executes after INSERT:
+  - Combines product.name (weight 'A')
+    + category.name (weight 'C')
+  - Sets products.fts tsvector for full-text search
+  - Description will be added later
+end note
+
+' Insert product description (append-only, version 1)
+ProductService -> DescRepo : createDescription(product_id, seller_id, description, version=1)
+activate DescRepo
+DescRepo -> DB : INSERT INTO product_descriptions (\n  product_id, author_id, content, lang, version, created_at\n) VALUES (\n  :product_id, :seller_id, :description, 'vi', 1, CURRENT_TIMESTAMP\n)
+activate DB
+DB --> DescRepo : description_id
+deactivate DB
+
+note right of DB
+  **Trigger: Update FTS after description INSERT**
+  Updates products.fts to include description content (weight 'B')
+end note
+
+deactivate DescRepo
+
+' Insert product images (min 3)
+ProductService -> ImageRepo : createImages(product_id, image_urls)
+activate ImageRepo
+
+loop for each image_url in image_urls
+    ImageRepo -> DB : INSERT INTO product_images (\n  product_id, image_url\n) VALUES (:product_id, :image_url)
+    activate DB
+    DB --> ImageRepo : image_id
+    deactivate DB
+end
+
+deactivate ImageRepo
+
+ProductService --> Controller : {\n  success: true,\n  product_id: product_id,\n  message: "Product created successfully"\n}
+deactivate ProductService
+
+Controller -> Browser : HTTP 201 Created\nRedirect to /products/{product_id}
+deactivate Controller
+
+Browser -> Seller : Chuyển đến trang chi tiết sản phẩm mới
+
+== Alternative Flow: Append Description (Section 3.2) ==
+
+note right of Seller
+  **Section 3.2: Bổ sung mô tả sản phẩm**
+  - Seller can ADD more descriptions
+  - Cannot UPDATE/DELETE old descriptions
+  - New description appended with version++
+end note
+
+Seller -> Browser : Truy cập sản phẩm, click "Thêm mô tả"
+Browser -> Controller : POST /products/{product_id}/descriptions\n{content: "Thông tin bổ sung..."}
+
+activate Controller
+Controller -> ProductService : appendDescription(seller_id, product_id, new_content)
+activate ProductService
+
+' Verify ownership
+ProductService -> ProductRepo : getProduct(product_id)
+activate ProductRepo
+ProductRepo -> DB : SELECT seller_id FROM products\nWHERE product_id = :product_id
+activate DB
+DB --> ProductRepo : seller_id
+deactivate DB
+deactivate ProductRepo
+
+alt product.seller_id != seller_id
+    ProductService --> Controller : Error: "Unauthorized"
+    Controller -> Browser : HTTP 403 Forbidden
+    Browser -> Seller : "Bạn không có quyền sửa sản phẩm này"
+end
+
+' Get next version number
+ProductService -> DescRepo : getMaxVersion(product_id)
+activate DescRepo
+DescRepo -> DB : SELECT MAX(version) FROM product_descriptions\nWHERE product_id = :product_id
+activate DB
+DB --> DescRepo : max_version (e.g., 2)
+deactivate DB
+deactivate DescRepo
+
+ProductService -> ProductService : next_version = max_version + 1
+
+' Insert new description version (append-only)
+ProductService -> DescRepo : createDescription(product_id, seller_id, new_content, next_version)
+activate DescRepo
+DescRepo -> DB : INSERT INTO product_descriptions (...)\nVALUES (..., :next_version, CURRENT_TIMESTAMP)
+activate DB
+DB --> DescRepo : description_id
+
+note right of DB
+  **Trigger updates products.fts**
+  Uses LATEST description (highest version)
+  for full-text search indexing
+end note
+
+deactivate DB
+deactivate DescRepo
+
+ProductService --> Controller : {success: true, version: next_version}
+deactivate ProductService
+
+Controller -> Browser : Reload product page
+deactivate Controller
+
+Browser -> Seller : Hiển thị mô tả mới với timestamp:\n✏️ 31/10/2025\n"Thông tin bổ sung..."
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  
+  **products:**
+  - auto_extend (BOOLEAN): Enable/disable auto-extend
+  - fts (TSVECTOR): Full-text search index
+  - status: 'active' (initially)
+  - start_time: CURRENT_TIMESTAMP
+  - end_time: start_time + 7 days (default)
+  - current_price = start_price (initially)
+  
+  **product_descriptions:**
+  - UNIQUE(product_id, version)
+  - Append-only: Cannot UPDATE, only INSERT new versions
+  - Display all versions in chronological order
+  
+  **product_images:**
+  - Minimum 3 images required (Section 3.1)
+  - First image becomes thumbnail_url
+  
+  **Triggers:**
+  - products_fts_update(): Auto-updates FTS column
+    * Combines: name (A) + description (B) + category (C)
+  
+  **Auto-extend (Section 3.1):**
+  - Configurable in system_settings:
+    * auto_extend_threshold_minutes: 5
+    * auto_extend_duration_minutes: 10
+  - If auto_extend = true:
+    * Bid within 5 min of end_time
+    * → Extend end_time by 10 minutes
+  
+  **WYSIWYG Editors:**
+  - Quill.js (https://quilljs.com)
+  - TinyMCE (https://www.tiny.cloud)
+  - Stores HTML content in product_descriptions.content
+end note
+
+@enduml

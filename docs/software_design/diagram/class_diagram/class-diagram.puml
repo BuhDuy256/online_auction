@@ -1,0 +1,825 @@
+@startuml ClassDiagram
+' --- Class Diagram: Online Auction System ---
+' Architecture: MVC + Repository Pattern + Service Layer
+' ORM: Prisma (TypeScript/Node.js)
+
+!define ENTITY_COLOR #E1F5FE
+!define SERVICE_COLOR #FFF9C4
+!define REPOSITORY_COLOR #F3E5F5
+!define CONTROLLER_COLOR #C8E6C9
+!define UTIL_COLOR #FFE0B2
+
+skinparam class {
+    BackgroundColor<<Entity>> ENTITY_COLOR
+    BackgroundColor<<Service>> SERVICE_COLOR
+    BackgroundColor<<Repository>> REPOSITORY_COLOR
+    BackgroundColor<<Controller>> CONTROLLER_COLOR
+    BackgroundColor<<Util>> UTIL_COLOR
+    BorderColor Black
+    ArrowColor Black
+}
+
+' ============================================
+' ENTITY CLASSES (Domain Models)
+' ============================================
+
+package "Domain Entities" <<Rectangle>> {
+
+    class User <<Entity>> {
+        - userId: number
+        - fullName: string
+        - email: string
+        - password: string (hashed)
+        - positiveReviews: number
+        - negativeReviews: number
+        - status: UserStatus
+        - passwordUpdatedAt: Date
+        - failedLoginAttempts: number
+        - lastLoginAt: Date
+        - createdAt: Date
+        --
+        + getRatingPercentage(): number
+        + canBid(): boolean
+        + incrementFailedAttempts(): void
+        + resetFailedAttempts(): void
+        + suspend(): void
+        + activate(): void
+    }
+    
+    enum UserStatus {
+        PENDING_VERIFICATION
+        ACTIVE
+        PENDING_UPGRADE
+        SUSPENDED
+    }
+    
+    class Role <<Entity>> {
+        - roleId: number
+        - name: string
+        --
+        + getPermissions(): Permission[]
+    }
+    
+    class Permission <<Entity>> {
+        - permissionId: number
+        - name: string
+    }
+    
+    class UserOTP <<Entity>> {
+        - otpId: number
+        - userId: number
+        - otpCode: string
+        - purpose: OTPPurpose
+        - createdAt: Date
+        - expiresAt: Date
+        - consumedAt: Date
+        --
+        + isValid(): boolean
+        + isExpired(): boolean
+        + consume(): void
+    }
+    
+    enum OTPPurpose {
+        SIGNUP
+        RESET_PASSWORD
+        OTHER
+    }
+    
+    class UpgradeRequest <<Entity>> {
+        - requestId: number
+        - userId: number
+        - status: UpgradeStatus
+        - createdAt: Date
+        - expiresAt: Date
+        --
+        + isExpired(): boolean
+        + approve(): void
+        + reject(reason: string): void
+        + cancel(): void
+    }
+    
+    enum UpgradeStatus {
+        PENDING
+        APPROVED
+        REJECTED
+        EXPIRED
+        CANCELLED
+    }
+    
+    class Category <<Entity>> {
+        - categoryId: number
+        - name: string
+        - slug: string
+        - parentId: number
+        --
+        + isRoot(): boolean
+        + getChildren(): Category[]
+        + getFullPath(): string
+    }
+    
+    class Product <<Entity>> {
+        - productId: number
+        - categoryId: number
+        - sellerId: number
+        - highestBidderId: number
+        - name: string
+        - thumbnailUrl: string
+        - currentPrice: number
+        - buyNowPrice: number
+        - startPrice: number
+        - stepPrice: number
+        - startTime: Date
+        - endTime: Date
+        - bidCount: number
+        - autoExtend: boolean
+        - status: ProductStatus
+        - fts: string (TSVECTOR)
+        --
+        + isActive(): boolean
+        + hasEnded(): boolean
+        + canBid(): boolean
+        + canBuyNow(): boolean
+        + getTimeRemaining(): number
+        + shouldAutoExtend(): boolean
+        + extendAuction(minutes: number): void
+    }
+    
+    enum ProductStatus {
+        ACTIVE
+        SOLD
+        EXPIRED
+        REMOVED
+    }
+    
+    class ProductDescription <<Entity>> {
+        - descriptionId: number
+        - productId: number
+        - version: number
+        - description: string
+        - createdAt: Date
+        --
+        + isLatest(): boolean
+    }
+    
+    class ProductImage <<Entity>> {
+        - imageId: number
+        - productId: number
+        - imageUrl: string
+    }
+    
+    class Bid <<Entity>> {
+        - bidId: number
+        - productId: number
+        - bidderId: number
+        - amount: number
+        - isAuto: boolean
+        - createdAt: Date
+        --
+        + isWinning(): boolean
+        + isValid(): boolean
+    }
+    
+    class AutoBid <<Entity>> {
+        - autoBidId: number
+        - productId: number
+        - bidderId: number
+        - maxAmount: number
+        - createdAt: Date
+        --
+        + calculateNextBid(currentPrice: number, stepPrice: number): number
+        + hasReachedMax(currentPrice: number): boolean
+    }
+    
+    class ProductRejection <<Entity>> {
+        - rejectionId: number
+        - productId: number
+        - bidderId: number
+        - reason: string
+        - createdAt: Date
+    }
+    
+    class Watchlist <<Entity>> {
+        - userId: number
+        - productId: number
+    }
+    
+    class ProductComment <<Entity>> {
+        - commentId: number
+        - productId: number
+        - userId: number
+        - content: string
+        - parentId: number
+        - createdAt: Date
+        - updatedAt: Date
+        --
+        + isTopLevel(): boolean
+        + hasReplies(): boolean
+        + getReplies(): ProductComment[]
+    }
+    
+    class Order <<Entity>> {
+        - orderId: number
+        - productId: number
+        - winnerId: number
+        - sellerId: number
+        - finalPrice: number
+        - status: OrderStatus
+        - cancellationReason: string
+        - createdAt: Date
+        --
+        + canCancel(): boolean
+        + confirmPayment(): void
+        + ship(trackingCode: string): void
+        + complete(): void
+        + cancel(reason: string): void
+    }
+    
+    enum OrderStatus {
+        PENDING
+        PAYMENT_CONFIRMED
+        SHIPPED
+        COMPLETED
+        CANCELLED
+    }
+    
+    class Invoice <<Entity>> {
+        - invoiceId: number
+        - orderId: number
+        - shippingAddress: string
+        - paymentProofUrl: string
+        - shippingTrackingCode: string
+        - createdAt: Date
+        - updatedAt: Date
+    }
+    
+    class OrderChat <<Entity>> {
+        - messageId: number
+        - orderId: number
+        - senderId: number
+        - receiverId: number
+        - content: string
+        - createdAt: Date
+    }
+    
+    class Review <<Entity>> {
+        - reviewId: number
+        - orderId: number
+        - reviewerId: number
+        - revieweredId: number
+        - rating: number
+        - content: string
+        - createdAt: Date
+        - updatedAt: Date
+        --
+        + isPositive(): boolean
+        + isNegative(): boolean
+    }
+    
+    class Notification <<Entity>> {
+        - notificationId: number
+        - userId: number
+        - type: string
+        - channel: NotificationChannel
+        - content: string
+        - isRead: boolean
+        - readAt: Date
+        - actionUrl: string
+        - createdAt: Date
+        --
+        + markAsRead(): void
+    }
+    
+    enum NotificationChannel {
+        EMAIL
+        IN_APP
+    }
+    
+    class SystemSettings <<Entity>> {
+        - settingId: number
+        - key: string
+        - value: string
+        --
+        + getValue(): any
+        + setValue(value: any): void
+    }
+    
+}
+
+' ============================================
+' RELATIONSHIPS BETWEEN ENTITIES
+' ============================================
+
+' User relationships
+User "1" -- "0..*" Role : has >
+User "1" -- "0..*" Permission : has via roles >
+User "1" -- "0..*" UserOTP : has >
+User "1" -- "0..1" UpgradeRequest : submits >
+User "1" -- "0..*" Product : sells >
+User "1" -- "0..*" Bid : places >
+User "1" -- "0..*" AutoBid : sets >
+User "1" -- "0..*" Watchlist : watches >
+User "1" -- "0..*" ProductComment : writes >
+User "1" -- "0..*" Order : wins/sells >
+User "1" -- "0..*" Review : gives/receives >
+User "1" -- "0..*" Notification : receives >
+
+User ..> UserStatus : uses
+UserOTP ..> OTPPurpose : uses
+UpgradeRequest ..> UpgradeStatus : uses
+
+' Category relationships
+Category "0..1" -- "0..*" Category : parent/children
+Category "1" -- "0..*" Product : categorizes >
+
+' Product relationships
+Product "1" -- "1..*" ProductDescription : has >
+Product "1" -- "3..*" ProductImage : has >
+Product "1" -- "0..*" Bid : receives >
+Product "1" -- "0..*" AutoBid : has >
+Product "1" -- "0..*" ProductRejection : has >
+Product "1" -- "0..*" Watchlist : watched by >
+Product "1" -- "0..*" ProductComment : has >
+Product "1" -- "0..1" Order : results in >
+
+Product ..> ProductStatus : uses
+
+' Order relationships
+Order "1" -- "1" Invoice : has >
+Order "1" -- "0..*" OrderChat : has >
+Order "1" -- "0..2" Review : results in >
+
+Order ..> OrderStatus : uses
+
+' ============================================
+' SERVICE CLASSES (Business Logic)
+' ============================================
+
+package "Business Services" <<Rectangle>> {
+    
+    class AuthService <<Service>> {
+        - userRepo: UserRepository
+        - otpRepo: OTPRepository
+        - emailService: EmailService
+        --
+        + register(data: RegisterDTO): Promise<User>
+        + verifyOTP(userId: number, code: string): Promise<boolean>
+        + login(email: string, password: string): Promise<LoginResult>
+        + loginWithOAuth(profile: OAuthProfile): Promise<User>
+        + resetPassword(email: string): Promise<void>
+        + changePassword(userId: number, oldPass: string, newPass: string): Promise<void>
+    }
+    
+    class ProductService <<Service>> {
+        - productRepo: ProductRepository
+        - categoryRepo: CategoryRepository
+        - uploadService: UploadService
+        --
+        + search(criteria: SearchCriteria): Promise<Product[]>
+        + getById(productId: number): Promise<Product>
+        + create(sellerId: number, data: CreateProductDTO): Promise<Product>
+        + updateDescription(productId: number, description: string): Promise<void>
+        + delete(productId: number): Promise<void>
+        + getRelatedProducts(productId: number): Promise<Product[]>
+    }
+    
+    class BidService <<Service>> {
+        - bidRepo: BidRepository
+        - autoBidRepo: AutoBidRepository
+        - productRepo: ProductRepository
+        - notificationService: NotificationService
+        --
+        + placeBid(bidderId: number, productId: number, amount: number): Promise<Bid>
+        + setAutoBid(bidderId: number, productId: number, maxAmount: number): Promise<AutoBid>
+        + processAutoBids(productId: number): Promise<void>
+        + getBidHistory(productId: number): Promise<Bid[]>
+        + rejectBidder(productId: number, bidderId: number, reason: string): Promise<void>
+    }
+    
+    class OrderService <<Service>> {
+        - orderRepo: OrderRepository
+        - invoiceRepo: InvoiceRepository
+        - reviewRepo: ReviewRepository
+        --
+        + createOrder(productId: number): Promise<Order>
+        + confirmPayment(orderId: number, data: PaymentDTO): Promise<void>
+        + shipOrder(orderId: number, trackingCode: string): Promise<void>
+        + confirmReceipt(orderId: number): Promise<void>
+        + cancelOrder(orderId: number, reason: string): Promise<void>
+    }
+    
+    class ChatService <<Service>> {
+        - chatRepo: ChatRepository
+        - orderRepo: OrderRepository
+        - notificationService: NotificationService
+        --
+        + sendMessage(orderId: number, senderId: number, content: string): Promise<OrderChat>
+        + getHistory(orderId: number): Promise<OrderChat[]>
+        + markAsRead(messageId: number): Promise<void>
+    }
+    
+    class ReviewService <<Service>> {
+        - reviewRepo: ReviewRepository
+        - orderRepo: OrderRepository
+        - userRepo: UserRepository
+        --
+        + createReview(orderId: number, reviewerId: number, data: ReviewDTO): Promise<Review>
+        + updateReview(reviewId: number, data: ReviewDTO): Promise<Review>
+        + getReviewsByUser(userId: number): Promise<Review[]>
+    }
+    
+    class CategoryService <<Service>> {
+        - categoryRepo: CategoryRepository
+        --
+        + create(name: string, parentId: number): Promise<Category>
+        + update(categoryId: number, name: string): Promise<Category>
+        + delete(categoryId: number): Promise<void>
+        + getTree(): Promise<Category[]>
+    }
+    
+    class UpgradeService <<Service>> {
+        - upgradeRepo: UpgradeRepository
+        - userRepo: UserRepository
+        - notificationService: NotificationService
+        --
+        + requestUpgrade(userId: number): Promise<UpgradeRequest>
+        + approveRequest(requestId: number): Promise<void>
+        + rejectRequest(requestId: number, reason: string): Promise<void>
+        + expireOldRequests(): Promise<void>
+    }
+    
+    class NotificationService <<Service>> {
+        - notificationRepo: NotificationRepository
+        - emailService: EmailService
+        --
+        + send(userId: number, type: string, content: string): Promise<void>
+        + sendEmail(to: string, subject: string, body: string): Promise<void>
+        + getUnread(userId: number): Promise<Notification[]>
+        + markAsRead(notificationId: number): Promise<void>
+    }
+    
+    class UploadService <<Service>> {
+        --
+        + uploadImage(file: File): Promise<string>
+        + deleteImage(url: string): Promise<void>
+    }
+    
+    class EmailService <<Service>> {
+        --
+        + sendOTP(email: string, code: string): Promise<void>
+        + sendWelcome(email: string, name: string): Promise<void>
+        + sendNotification(email: string, subject: string, body: string): Promise<void>
+    }
+    
+}
+
+' ============================================
+' REPOSITORY CLASSES (Data Access)
+' ============================================
+
+package "Data Repositories" <<Rectangle>> {
+    
+    interface IRepository<T> <<Repository>> {
+        + findById(id: number): Promise<T>
+        + findAll(): Promise<T[]>
+        + create(data: Partial<T>): Promise<T>
+        + update(id: number, data: Partial<T>): Promise<T>
+        + delete(id: number): Promise<void>
+    }
+    
+    class UserRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + findByEmail(email: string): Promise<User>
+        + findById(userId: number): Promise<User>
+        + create(data: CreateUserDTO): Promise<User>
+        + updateStatus(userId: number, status: UserStatus): Promise<void>
+        + incrementFailedAttempts(userId: number): Promise<void>
+        + resetFailedAttempts(userId: number): Promise<void>
+        + updateLastLogin(userId: number): Promise<void>
+        + addRole(userId: number, roleId: number): Promise<void>
+    }
+    
+    class OTPRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(userId: number, purpose: OTPPurpose): Promise<UserOTP>
+        + findValid(userId: number, code: string, purpose: OTPPurpose): Promise<UserOTP>
+        + consume(otpId: number): Promise<void>
+    }
+    
+    class ProductRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + search(criteria: SearchCriteria): Promise<Product[]>
+        + findById(productId: number): Promise<Product>
+        + create(data: CreateProductDTO): Promise<Product>
+        + updatePrice(productId: number, price: number, bidderId: number): Promise<void>
+        + updateStatus(productId: number, status: ProductStatus): Promise<void>
+        + getRelated(categoryId: number, productId: number): Promise<Product[]>
+    }
+    
+    class CategoryRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + findAll(): Promise<Category[]>
+        + findById(categoryId: number): Promise<Category>
+        + create(name: string, slug: string, parentId: number): Promise<Category>
+        + update(categoryId: number, name: string): Promise<Category>
+        + delete(categoryId: number): Promise<void>
+        + getChildren(parentId: number): Promise<Category[]>
+    }
+    
+    class BidRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(data: CreateBidDTO): Promise<Bid>
+        + findByProduct(productId: number): Promise<Bid[]>
+        + findHighestBid(productId: number): Promise<Bid>
+        + countByProduct(productId: number): Promise<number>
+    }
+    
+    class AutoBidRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(data: CreateAutoBidDTO): Promise<AutoBid>
+        + findByProduct(productId: number): Promise<AutoBid[]>
+        + delete(autoBidId: number): Promise<void>
+    }
+    
+    class OrderRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(productId: number, winnerId: number, sellerId: number, finalPrice: number): Promise<Order>
+        + findById(orderId: number): Promise<Order>
+        + updateStatus(orderId: number, status: OrderStatus): Promise<void>
+        + cancel(orderId: number, reason: string): Promise<void>
+    }
+    
+    class InvoiceRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(orderId: number): Promise<Invoice>
+        + update(orderId: number, data: Partial<Invoice>): Promise<Invoice>
+        + findByOrderId(orderId: number): Promise<Invoice>
+    }
+    
+    class ChatRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(orderId: number, senderId: number, receiverId: number, content: string): Promise<OrderChat>
+        + findByOrderId(orderId: number): Promise<OrderChat[]>
+    }
+    
+    class ReviewRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(data: CreateReviewDTO): Promise<Review>
+        + update(reviewId: number, data: Partial<Review>): Promise<Review>
+        + findByOrderId(orderId: number): Promise<Review[]>
+        + findByUserId(userId: number): Promise<Review[]>
+    }
+    
+    class WatchlistRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + add(userId: number, productId: number): Promise<void>
+        + remove(userId: number, productId: number): Promise<void>
+        + findByUserId(userId: number): Promise<Product[]>
+        + exists(userId: number, productId: number): Promise<boolean>
+    }
+    
+    class CommentRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(data: CreateCommentDTO): Promise<ProductComment>
+        + update(commentId: number, content: string): Promise<ProductComment>
+        + findByProductId(productId: number): Promise<ProductComment[]>
+        + getTree(productId: number): Promise<ProductComment[]>
+    }
+    
+    class UpgradeRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(userId: number): Promise<UpgradeRequest>
+        + findById(requestId: number): Promise<UpgradeRequest>
+        + findPending(): Promise<UpgradeRequest[]>
+        + updateStatus(requestId: number, status: UpgradeStatus): Promise<void>
+        + expireOld(): Promise<number>
+    }
+    
+    class NotificationRepository <<Repository>> {
+        - prisma: PrismaClient
+        --
+        + create(data: CreateNotificationDTO): Promise<Notification>
+        + findUnread(userId: number): Promise<Notification[]>
+        + markAsRead(notificationId: number): Promise<void>
+    }
+    
+}
+
+' Repository implements interface
+UserRepository ..|> IRepository
+ProductRepository ..|> IRepository
+CategoryRepository ..|> IRepository
+BidRepository ..|> IRepository
+OrderRepository ..|> IRepository
+ReviewRepository ..|> IRepository
+
+' ============================================
+' CONTROLLER CLASSES (API Endpoints)
+' ============================================
+
+package "API Controllers" <<Rectangle>> {
+    
+    class AuthController <<Controller>> {
+        - authService: AuthService
+        --
+        + register(req, res): Promise<Response>
+        + verifyOTP(req, res): Promise<Response>
+        + login(req, res): Promise<Response>
+        + loginWithGoogle(req, res): Promise<Response>
+        + logout(req, res): Promise<Response>
+        + forgotPassword(req, res): Promise<Response>
+    }
+    
+    class ProductController <<Controller>> {
+        - productService: ProductService
+        --
+        + search(req, res): Promise<Response>
+        + getById(req, res): Promise<Response>
+        + create(req, res): Promise<Response>
+        + update(req, res): Promise<Response>
+        + delete(req, res): Promise<Response>
+    }
+    
+    class BidController <<Controller>> {
+        - bidService: BidService
+        --
+        + placeBid(req, res): Promise<Response>
+        + setAutoBid(req, res): Promise<Response>
+        + getBidHistory(req, res): Promise<Response>
+        + rejectBidder(req, res): Promise<Response>
+    }
+    
+    class OrderController <<Controller>> {
+        - orderService: OrderService
+        - chatService: ChatService
+        --
+        + getOrderDetails(req, res): Promise<Response>
+        + confirmPayment(req, res): Promise<Response>
+        + shipOrder(req, res): Promise<Response>
+        + confirmReceipt(req, res): Promise<Response>
+        + cancelOrder(req, res): Promise<Response>
+    }
+    
+    class AdminController <<Controller>> {
+        - categoryService: CategoryService
+        - upgradeService: UpgradeService
+        --
+        + createCategory(req, res): Promise<Response>
+        + updateCategory(req, res): Promise<Response>
+        + deleteCategory(req, res): Promise<Response>
+        + getPendingUpgrades(req, res): Promise<Response>
+        + approveUpgrade(req, res): Promise<Response>
+        + rejectUpgrade(req, res): Promise<Response>
+    }
+    
+}
+
+' ============================================
+' SERVICE DEPENDENCIES
+' ============================================
+
+AuthService --> UserRepository
+AuthService --> OTPRepository
+AuthService --> EmailService
+
+ProductService --> ProductRepository
+ProductService --> CategoryRepository
+ProductService --> UploadService
+
+BidService --> BidRepository
+BidService --> AutoBidRepository
+BidService --> ProductRepository
+BidService --> NotificationService
+
+OrderService --> OrderRepository
+OrderService --> InvoiceRepository
+OrderService --> ReviewRepository
+
+ChatService --> ChatRepository
+ChatService --> OrderRepository
+ChatService --> NotificationService
+
+ReviewService --> ReviewRepository
+ReviewService --> OrderRepository
+ReviewService --> UserRepository
+
+CategoryService --> CategoryRepository
+
+UpgradeService --> UpgradeRepository
+UpgradeService --> UserRepository
+UpgradeService --> NotificationService
+
+' ============================================
+' CONTROLLER DEPENDENCIES
+' ============================================
+
+AuthController --> AuthService
+ProductController --> ProductService
+BidController --> BidService
+OrderController --> OrderService
+OrderController --> ChatService
+AdminController --> CategoryService
+AdminController --> UpgradeService
+
+' ============================================
+' UTILITY CLASSES
+' ============================================
+
+package "Utilities" <<Rectangle>> {
+    
+    class HashUtil <<Util>> {
+        --
+        + {static} hash(password: string): Promise<string>
+        + {static} compare(password: string, hash: string): Promise<boolean>
+    }
+    
+    class JWTUtil <<Util>> {
+        --
+        + {static} sign(payload: object, secret: string): string
+        + {static} verify(token: string, secret: string): object
+    }
+    
+    class ValidationUtil <<Util>> {
+        --
+        + {static} validateEmail(email: string): boolean
+        + {static} validatePassword(password: string): boolean
+        + {static} sanitize(input: string): string
+    }
+    
+    class SlugUtil <<Util>> {
+        --
+        + {static} generate(text: string): string
+    }
+    
+}
+
+AuthService --> HashUtil
+AuthService --> JWTUtil
+AuthController --> ValidationUtil
+CategoryService --> SlugUtil
+
+' ============================================
+' DESIGN PATTERNS NOTES
+' ============================================
+
+note top of AuthService
+  **Design Patterns Used:**
+  
+  1. **Repository Pattern:**
+     Services depend on Repository interfaces
+     for data access abstraction
+  
+  2. **Service Layer Pattern:**
+     Controllers delegate business logic to Services
+     Separation of concerns
+  
+  3. **Dependency Injection:**
+     Services receive repositories via constructor
+     Easier testing with mock repositories
+  
+  4. **MVC Pattern:**
+     Model (Entities) - View (Frontend) - Controller
+  
+  5. **Factory Pattern:**
+     Entity creation through repositories
+  
+  6. **Strategy Pattern:**
+     Multiple OTP purposes (signup, reset, etc.)
+     Multiple notification channels (email, in-app)
+end note
+
+note bottom
+  **Technology Stack:**
+  - Language: TypeScript
+  - Runtime: Node.js
+  - ORM: Prisma
+  - Database: PostgreSQL
+  
+  **Class Relationships:**
+  - Association: →
+  - Composition: ◆→
+  - Aggregation: ◇→
+  - Inheritance: ▷
+  - Dependency: ..>
+  - Implementation: ..|>
+  
+  **Layered Architecture:**
+  1. Controller Layer (API endpoints)
+  2. Service Layer (Business logic)
+  3. Repository Layer (Data access)
+  4. Entity Layer (Domain models)
+end note
+
+@enduml

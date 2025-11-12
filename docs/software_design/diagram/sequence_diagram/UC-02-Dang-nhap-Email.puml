@@ -1,0 +1,166 @@
+@startuml UC02_DangNhapEmail
+' --- Sequence Diagram: Đăng nhập bằng Email ---
+' Database Schema: users (email, password, failed_login_attempts, last_login_at, status)
+' Reference: Section 5.1 (Project Description)
+
+autonumber
+actor User
+participant "Web Browser" as Browser
+participant "Web Server\n(Controller)" as Controller
+participant "Auth Service" as AuthService
+participant "User Repository" as UserRepo
+database "Database" as DB
+
+== Main Flow: Successful Login ==
+
+User -> Browser : Truy cập trang đăng nhập
+Browser -> Controller : GET /login
+Controller -> Browser : Hiển thị form đăng nhập (Email, Password)
+
+User -> Browser : Nhập Email và Password
+Browser -> Controller : POST /login {email, password}
+
+activate Controller
+Controller -> AuthService : login(email, password)
+activate AuthService
+
+' Find user by email
+AuthService -> UserRepo : findUserByEmail(email)
+activate UserRepo
+UserRepo -> DB : SELECT user_id, full_name, email, password, \nfailed_login_attempts, status, positive_reviews, negative_reviews\nFROM users\nWHERE email = :email
+activate DB
+DB --> UserRepo : User record
+deactivate DB
+deactivate UserRepo
+
+' Check if user exists
+alt User not found
+    AuthService --> Controller : Error: "Email or password is incorrect"
+    Controller -> Browser : Display error message
+    Browser -> User : "Email hoặc mật khẩu không đúng"
+else User exists - Check status
+    
+    ' Check account status
+    alt status = 'suspended'
+        AuthService --> Controller : Error: "Account is suspended"
+        Controller -> Browser : Display error
+        Browser -> User : "Tài khoản đã bị tạm khóa"
+    
+    else status = 'pending_verification'
+        AuthService --> Controller : Error: "Email not verified"
+        Controller -> Browser : Redirect to /verify-email
+        Browser -> User : "Vui lòng xác thực email"
+    
+    else status = 'active' - Verify password
+        
+        ' Verify password hash
+        AuthService -> AuthService : bcrypt.compare(password, user.password)
+        
+        alt Password is valid
+            
+            ' Reset failed login attempts
+            AuthService -> UserRepo : updateLoginSuccess(user_id)
+            activate UserRepo
+            UserRepo -> DB : UPDATE users\nSET failed_login_attempts = 0,\nlast_login_at = CURRENT_TIMESTAMP\nWHERE user_id = :user_id
+            activate DB
+            DB --> UserRepo : Updated
+            deactivate DB
+            deactivate UserRepo
+            
+            ' Retrieve user roles (RBAC)
+            AuthService -> UserRepo : getUserRoles(user_id)
+            activate UserRepo
+            UserRepo -> DB : SELECT r.name FROM roles r\nJOIN users_roles ur ON r.role_id = ur.role_id\nWHERE ur.user_id = :user_id
+            activate DB
+            DB --> UserRepo : roles ['bidder', 'seller']
+            deactivate DB
+            deactivate UserRepo
+            
+            AuthService --> Controller : {success: true, user: user_data, roles: roles}
+            deactivate AuthService
+            
+            ' Create session/JWT token
+            Controller -> Controller : Create session with user_id, roles
+            Controller -> Browser : Set session cookie / JWT token\nRedirect to home page
+            deactivate Controller
+            
+            Browser -> User : Chuyển đến trang chủ (đã đăng nhập)
+        
+        else Password is invalid
+            
+            ' Increment failed login attempts
+            AuthService -> UserRepo : incrementFailedLoginAttempts(user_id)
+            activate UserRepo
+            UserRepo -> DB : UPDATE users\nSET failed_login_attempts = failed_login_attempts + 1\nWHERE user_id = :user_id
+            activate DB
+            DB --> UserRepo : Updated
+            deactivate DB
+            
+            ' Check if account should be locked
+            UserRepo -> DB : SELECT failed_login_attempts FROM users\nWHERE user_id = :user_id
+            activate DB
+            DB --> UserRepo : failed_login_attempts count
+            deactivate DB
+            
+            alt failed_login_attempts >= 5
+                ' Lock account
+                UserRepo -> DB : UPDATE users\nSET status = 'suspended'\nWHERE user_id = :user_id
+                activate DB
+                DB --> UserRepo : Locked
+                deactivate DB
+                deactivate UserRepo
+                
+                AuthService --> Controller : Error: "Account locked due to too many failed attempts"
+                Controller -> Browser : Display error
+                Browser -> User : "Tài khoản bị khóa do đăng nhập sai quá nhiều lần"
+            
+            else failed_login_attempts < 5
+                deactivate UserRepo
+                AuthService --> Controller : Error: "Email or password is incorrect"
+                Controller -> Browser : Display error with remaining attempts
+                Browser -> User : "Email hoặc mật khẩu không đúng\n(Còn X lần thử)"
+            end
+            
+            deactivate AuthService
+            deactivate Controller
+        end
+    end
+end
+
+== Alternative Flow: Forgot Password ==
+
+note right of User
+  **Forgot Password Flow:**
+  1. User clicks "Forgot Password"
+  2. Submit email address
+  3. System generates OTP
+  4. Send OTP to email
+  5. User enters OTP and new password
+  6. Update password and reset failed_login_attempts
+  
+  See UC-02-Dang-nhap-Quen-mat-khau.puml
+end note
+
+== Notes ==
+
+note right of DB
+  **Database Tables:**
+  - users(user_id, email, password, 
+    failed_login_attempts, last_login_at, 
+    status, positive_reviews, negative_reviews)
+  - users_roles(user_id, role_id)
+  - roles(role_id, name)
+  
+  **Security Features:**
+  - Password hashed with bcrypt/scrypt
+  - Track failed_login_attempts
+  - Lock account after 5 failed attempts
+  - Update last_login_at on success
+  
+  **Status Values:**
+  - 'pending_verification': Email chưa xác thực
+  - 'active': Tài khoản hoạt động bình thường
+  - 'suspended': Tài khoản bị khóa
+end note
+
+@enduml
