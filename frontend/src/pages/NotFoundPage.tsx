@@ -10,9 +10,7 @@ export default function NotFoundPage() {
   };
 
   return (
-    // 2. Đổi tên class
     <div className="notfound-container">
-      {/* 3. Đổi icon và nội dung */}
       <div className="notfound-icon">❓</div>
       <h1 className="notfound-title">404 - Page Not Found</h1>
       <p className="notfound-message">
@@ -21,7 +19,7 @@ export default function NotFoundPage() {
       <Button
         onClick={handleGoBack}
         variant="secondary"
-        className="notfound-back-button" // 4. Đổi tên class
+        className="notfound-back-button"
       >
         Go Back
       </Button>
