@@ -39,7 +39,7 @@ export const verifyOTP = async (userId: number, otp: string) => {
     throw new Error("Invalid OTP code");
   }
 
-  if (isOTPExpired(otpRecord.created_at)) {
+  if (!otpRecord.created_at || isOTPExpired(otpRecord.created_at)) {
     throw new Error("OTP has expired. Please request a new one.");
   }
 

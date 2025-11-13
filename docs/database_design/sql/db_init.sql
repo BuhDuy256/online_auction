@@ -55,23 +55,81 @@ CREATE TYPE notification_channel_enum AS ENUM (
 );
 
 -- ============================================
--- 2. RBAC TABLES (Users, Roles, Permissions)
+-- 2. CORE USER TABLES
 -- ============================================
 
--- Table: users
+-- Table: users (Without username field)
 CREATE TABLE users (
-    user_id SERIAL PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL, -- bcrypt/scrypt hash
+    address VARCHAR(500),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     positive_reviews INT NOT NULL DEFAULT 0,
     negative_reviews INT NOT NULL DEFAULT 0,
     status user_status_enum NOT NULL DEFAULT 'pending_verification',
     password_updated_at TIMESTAMP,
     failed_login_attempts INT NOT NULL DEFAULT 0,
     last_login_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Trigger function: Update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: Auto-update updated_at for users
+CREATE TRIGGER trigger_update_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- 3. OTP VERIFICATION (For Chat App & Auction)
+-- ============================================
+
+-- Table: otp_verifications (Chat app structure)
+CREATE TABLE otp_verifications (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    is_used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Indexes for OTP queries
+CREATE INDEX idx_otp_user_id ON otp_verifications(user_id);
+CREATE INDEX idx_otp_created_at ON otp_verifications(created_at);
+CREATE INDEX idx_otp_is_used ON otp_verifications(is_used);
+
+-- Table: user_otps (Auction system - more detailed)
+CREATE TABLE user_otps (
+    otp_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp_code VARCHAR(10) NOT NULL,
+    purpose otp_purpose_enum NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    consumed_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Unique constraint: only one active OTP per purpose per user
+CREATE UNIQUE INDEX idx_user_otps_active 
+ON user_otps(user_id, purpose) 
+WHERE consumed_at IS NULL;
+
+-- ============================================
+-- 4. RBAC TABLES (Roles & Permissions)
+-- ============================================
 
 -- Table: roles
 CREATE TABLE roles (
@@ -90,7 +148,7 @@ CREATE TABLE users_roles (
     user_id INT NOT NULL,
     role_id INT NOT NULL,
     PRIMARY KEY (user_id, role_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE
 );
 
@@ -104,25 +162,27 @@ CREATE TABLE roles_permissions (
 );
 
 -- ============================================
--- 3. USER AUTHENTICATION & VERIFICATION
+-- 5. REFRESH TOKENS (Session Management)
 -- ============================================
 
--- Table: user_otps
-CREATE TABLE user_otps (
-    otp_id SERIAL PRIMARY KEY,
+-- Table: refresh_tokens
+CREATE TABLE refresh_tokens (
+    token_id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
-    otp_code VARCHAR(10) NOT NULL,
-    purpose otp_purpose_enum NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    token_hash VARCHAR(255) NOT NULL UNIQUE,
     expires_at TIMESTAMP NOT NULL,
-    consumed_at TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    device_info TEXT,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Unique constraint: only one active OTP per purpose per user
-CREATE UNIQUE INDEX idx_user_otps_active 
-ON user_otps(user_id, purpose) 
-WHERE consumed_at IS NULL;
+CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+-- ============================================
+-- 6. UPGRADE REQUESTS
+-- ============================================
 
 -- Table: upgrade_requests
 CREATE TABLE upgrade_requests (
@@ -132,11 +192,51 @@ CREATE TABLE upgrade_requests (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     approved_at TIMESTAMP,
     expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '7 days'),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- ============================================
--- 4. PRODUCT CATEGORIES
+-- 7. CHAT SYSTEM (From Chat App)
+-- ============================================
+
+-- Table: conversations
+CREATE TABLE conversations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    is_group BOOLEAN DEFAULT FALSE,
+    creator_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Table: conversation_participants
+CREATE TABLE conversation_participants (
+    user_id INT NOT NULL,
+    conversation_id INT NOT NULL,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, conversation_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- Table: messages
+CREATE TABLE messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT NOT NULL,
+    sender_id INT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Indexes for chat queries
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_messages_sender ON messages(sender_id);
+CREATE INDEX idx_messages_created ON messages(created_at);
+
+-- ============================================
+-- 8. PRODUCT CATEGORIES
 -- ============================================
 
 -- Table: categories (2-level hierarchy)
@@ -147,16 +247,14 @@ CREATE TABLE categories (
     parent_id INT,
     FOREIGN KEY (parent_id) REFERENCES categories(category_id) ON DELETE RESTRICT,
     UNIQUE(parent_id, slug),
-    CHECK (parent_id IS NULL OR parent_id != category_id) -- Prevent self-reference
+    CHECK (parent_id IS NULL OR parent_id != category_id)
 );
 
 -- Function: Check 2-level hierarchy constraint
 CREATE OR REPLACE FUNCTION check_category_two_levels()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If inserting a child category (parent_id NOT NULL)
     IF NEW.parent_id IS NOT NULL THEN
-        -- Check that parent is root (has no parent)
         IF EXISTS (
             SELECT 1 FROM categories 
             WHERE category_id = NEW.parent_id 
@@ -194,7 +292,7 @@ FOR EACH ROW
 EXECUTE FUNCTION auto_generate_slug();
 
 -- ============================================
--- 5. PRODUCTS & AUCTIONS
+-- 9. PRODUCTS & AUCTIONS
 -- ============================================
 
 -- Table: products
@@ -214,11 +312,11 @@ CREATE TABLE products (
     bid_count INT NOT NULL DEFAULT 0,
     auto_extend BOOLEAN NOT NULL DEFAULT FALSE,
     status product_status_enum NOT NULL DEFAULT 'active',
-    fts TSVECTOR, -- Full-text search column
+    fts TSVECTOR,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(category_id) ON DELETE RESTRICT,
-    FOREIGN KEY (seller_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (highest_bidder_id) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (highest_bidder_id) REFERENCES users(id) ON DELETE SET NULL,
     CHECK (end_time > start_time),
     CHECK (step_price > 0),
     CHECK (start_price > 0),
@@ -226,12 +324,12 @@ CREATE TABLE products (
     CHECK (buy_now_price IS NULL OR buy_now_price >= start_price)
 );
 
--- Index: Performance indexes for products
+-- Indexes for products
 CREATE INDEX idx_products_status_endtime ON products(status, end_time);
 CREATE INDEX idx_products_category_status ON products(category_id, status);
-CREATE INDEX idx_products_fts ON products USING GIN(fts); -- Full-text search index
+CREATE INDEX idx_products_fts ON products USING GIN(fts);
 
--- Table: product_descriptions (append-only, versioned)
+-- Table: product_descriptions
 CREATE TABLE product_descriptions (
     description_id SERIAL PRIMARY KEY,
     product_id INT NOT NULL,
@@ -241,7 +339,7 @@ CREATE TABLE product_descriptions (
     version INT NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (author_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(product_id, version)
 );
 
@@ -253,29 +351,23 @@ CREATE TABLE product_images (
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
 );
 
--- Function: Update FTS column with weighted tsvectors
+-- Function: Update FTS column
 CREATE OR REPLACE FUNCTION update_product_fts()
 RETURNS TRIGGER AS $$
 DECLARE
     category_name TEXT;
     latest_description TEXT;
 BEGIN
-    -- Get category name
     SELECT c.name INTO category_name
     FROM categories c
     WHERE c.category_id = NEW.category_id;
     
-    -- Get latest description
     SELECT pd.content INTO latest_description
     FROM product_descriptions pd
     WHERE pd.product_id = NEW.product_id
     ORDER BY pd.version DESC
     LIMIT 1;
     
-    -- Build weighted FTS vector
-    -- Weight A (highest): product name
-    -- Weight B: description
-    -- Weight C (lowest): category name
     NEW.fts := 
         setweight(to_tsvector('english', COALESCE(NEW.name, '')), 'A') ||
         setweight(to_tsvector('english', COALESCE(latest_description, '')), 'B') ||
@@ -285,14 +377,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger: Update FTS on product insert/update
+-- Trigger: Update FTS
 CREATE TRIGGER trigger_update_product_fts
 BEFORE INSERT OR UPDATE ON products
 FOR EACH ROW
 EXECUTE FUNCTION update_product_fts();
 
 -- ============================================
--- 6. BIDDING SYSTEM
+-- 10. BIDDING SYSTEM
 -- ============================================
 
 -- Table: bids
@@ -304,11 +396,10 @@ CREATE TABLE bids (
     is_auto BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (bidder_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (bidder_id) REFERENCES users(id) ON DELETE CASCADE,
     CHECK (amount > 0)
 );
 
--- Indexes for bid queries
 CREATE INDEX idx_bids_product_time ON bids(product_id, created_at DESC);
 CREATE INDEX idx_bids_bidder ON bids(bidder_id);
 
@@ -320,15 +411,14 @@ CREATE TABLE auto_bids (
     max_amount NUMERIC(15, 2) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (bidder_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (bidder_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(product_id, bidder_id),
     CHECK (max_amount > 0)
 );
 
--- Index for auto-bid tie-breaker (earlier bid wins)
 CREATE INDEX idx_autobids_product_time ON auto_bids(product_id, created_at ASC);
 
--- Function: Update product on new bid
+-- Function: Update product on bid
 CREATE OR REPLACE FUNCTION update_product_on_bid_insert()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -343,13 +433,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger: Update product when bid inserted
+-- Trigger: Update product on bid
 CREATE TRIGGER trigger_update_product_on_bid
 AFTER INSERT ON bids
 FOR EACH ROW
 EXECUTE FUNCTION update_product_on_bid_insert();
 
--- Function: Auto-extend auction on late bid
+-- Function: Auto-extend auction
 CREATE OR REPLACE FUNCTION auto_extend_on_late_bid()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -357,7 +447,6 @@ DECLARE
     extend_minutes INT;
     time_remaining INTERVAL;
 BEGIN
-    -- Get settings
     SELECT setting_value::INT INTO threshold_minutes
     FROM system_settings
     WHERE setting_key = 'auto_extend_threshold_minutes';
@@ -366,18 +455,15 @@ BEGIN
     FROM system_settings
     WHERE setting_key = 'auto_extend_duration_minutes';
     
-    -- Check if product has auto_extend enabled
     IF EXISTS (
         SELECT 1 FROM products
         WHERE product_id = NEW.product_id
         AND auto_extend = TRUE
     ) THEN
-        -- Calculate time remaining
         SELECT (end_time - CURRENT_TIMESTAMP) INTO time_remaining
         FROM products
         WHERE product_id = NEW.product_id;
         
-        -- If bid within threshold, extend auction
         IF time_remaining <= (threshold_minutes || ' minutes')::INTERVAL THEN
             UPDATE products
             SET end_time = end_time + (extend_minutes || ' minutes')::INTERVAL
@@ -389,7 +475,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger: Auto-extend auction
+-- Trigger: Auto-extend
 CREATE TRIGGER trigger_auto_extend_on_late_bid
 AFTER INSERT ON bids
 FOR EACH ROW
@@ -403,12 +489,12 @@ CREATE TABLE product_rejections (
     reason TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (bidder_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (bidder_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(product_id, bidder_id)
 );
 
 -- ============================================
--- 7. WATCHLIST & COMMENTS
+-- 11. WATCHLIST & COMMENTS
 -- ============================================
 
 -- Table: watchlist
@@ -417,11 +503,11 @@ CREATE TABLE watchlist (
     product_id INT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, product_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
 );
 
--- Table: product_comments (nested structure with parent_id)
+-- Table: product_comments
 CREATE TABLE product_comments (
     comment_id SERIAL PRIMARY KEY,
     product_id INT NOT NULL,
@@ -431,22 +517,21 @@ CREATE TABLE product_comments (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES product_comments(comment_id) ON DELETE CASCADE
 );
 
--- Index for nested comment queries
 CREATE INDEX idx_comments_product ON product_comments(product_id, created_at);
 CREATE INDEX idx_comments_parent ON product_comments(parent_id);
 
 -- ============================================
--- 8. ORDERS & INVOICES
+-- 12. ORDERS & INVOICES
 -- ============================================
 
 -- Table: orders
 CREATE TABLE orders (
     order_id SERIAL PRIMARY KEY,
-    product_id INT NOT NULL UNIQUE, -- 1:1 relationship
+    product_id INT NOT NULL UNIQUE,
     winner_id INT NOT NULL,
     seller_id INT NOT NULL,
     final_price NUMERIC(15, 2) NOT NULL,
@@ -454,14 +539,14 @@ CREATE TABLE orders (
     cancellation_reason TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE RESTRICT,
-    FOREIGN KEY (winner_id) REFERENCES users(user_id) ON DELETE RESTRICT,
-    FOREIGN KEY (seller_id) REFERENCES users(user_id) ON DELETE RESTRICT
+    FOREIGN KEY (winner_id) REFERENCES users(id) ON DELETE RESTRICT,
+    FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
--- Table: invoices (1:1 with orders)
+-- Table: invoices
 CREATE TABLE invoices (
     invoice_id SERIAL PRIMARY KEY,
-    order_id INT NOT NULL UNIQUE, -- 1:1 relationship
+    order_id INT NOT NULL UNIQUE,
     shipping_address TEXT,
     payment_proof_url VARCHAR(500),
     shipping_tracking_code VARCHAR(100),
@@ -479,15 +564,14 @@ CREATE TABLE order_chat (
     content TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-    FOREIGN KEY (sender_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (receiver_id) REFERENCES users(user_id) ON DELETE CASCADE
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Index for chat queries
 CREATE INDEX idx_chat_order ON order_chat(order_id, created_at ASC);
 
 -- ============================================
--- 9. REVIEWS & RATINGS
+-- 13. REVIEWS & RATINGS
 -- ============================================
 
 -- Table: reviews
@@ -496,13 +580,13 @@ CREATE TABLE reviews (
     order_id INT NOT NULL,
     reviewer_id INT NOT NULL,
     reviewered_id INT NOT NULL,
-    rating INT NOT NULL CHECK (rating IN (1, -1)), -- 1 = positive, -1 = negative
+    rating INT NOT NULL CHECK (rating IN (1, -1)),
     content TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-    FOREIGN KEY (reviewer_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (reviewered_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewered_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(order_id, reviewer_id, reviewered_id)
 );
 
@@ -513,11 +597,11 @@ BEGIN
     IF NEW.rating = 1 THEN
         UPDATE users
         SET positive_reviews = positive_reviews + 1
-        WHERE user_id = NEW.reviewered_id;
+        WHERE id = NEW.reviewered_id;
     ELSIF NEW.rating = -1 THEN
         UPDATE users
         SET negative_reviews = negative_reviews + 1
-        WHERE user_id = NEW.reviewered_id;
+        WHERE id = NEW.reviewered_id;
     END IF;
     
     RETURN NEW;
@@ -534,28 +618,25 @@ EXECUTE FUNCTION update_user_rating_on_review_insert();
 CREATE OR REPLACE FUNCTION update_user_rating_on_review_update()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If rating changed
     IF OLD.rating != NEW.rating THEN
-        -- Decrement old rating
         IF OLD.rating = 1 THEN
             UPDATE users
             SET positive_reviews = positive_reviews - 1
-            WHERE user_id = NEW.reviewered_id;
+            WHERE id = NEW.reviewered_id;
         ELSIF OLD.rating = -1 THEN
             UPDATE users
             SET negative_reviews = negative_reviews - 1
-            WHERE user_id = NEW.reviewered_id;
+            WHERE id = NEW.reviewered_id;
         END IF;
         
-        -- Increment new rating
         IF NEW.rating = 1 THEN
             UPDATE users
             SET positive_reviews = positive_reviews + 1
-            WHERE user_id = NEW.reviewered_id;
+            WHERE id = NEW.reviewered_id;
         ELSIF NEW.rating = -1 THEN
             UPDATE users
             SET negative_reviews = negative_reviews + 1
-            WHERE user_id = NEW.reviewered_id;
+            WHERE id = NEW.reviewered_id;
         END IF;
     END IF;
     
@@ -570,7 +651,7 @@ FOR EACH ROW
 EXECUTE FUNCTION update_user_rating_on_review_update();
 
 -- ============================================
--- 10. NOTIFICATIONS
+-- 14. NOTIFICATIONS
 -- ============================================
 
 -- Table: notifications
@@ -584,14 +665,13 @@ CREATE TABLE notifications (
     read_at TIMESTAMP,
     action_url VARCHAR(500),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Index for unread notifications query
 CREATE INDEX idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
 
 -- ============================================
--- 11. SYSTEM SETTINGS
+-- 15. SYSTEM SETTINGS
 -- ============================================
 
 -- Table: system_settings
@@ -610,7 +690,7 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
 ('min_rating_percentage', '80', 'Minimum rating percentage (0-100) required to bid');
 
 -- ============================================
--- 12. INITIAL DATA (Roles, Permissions)
+-- 16. INITIAL DATA (Roles, Permissions)
 -- ============================================
 
 -- Insert default roles
@@ -621,40 +701,33 @@ INSERT INTO roles (name) VALUES
 
 -- Insert default permissions
 INSERT INTO permissions (name) VALUES
--- User permissions
 ('user.view'),
 ('user.create'),
 ('user.update'),
 ('user.delete'),
--- Product permissions
 ('product.view'),
 ('product.create'),
 ('product.update'),
 ('product.delete'),
--- Bid permissions
 ('bid.place'),
 ('bid.view'),
--- Order permissions
 ('order.view'),
 ('order.manage'),
--- Category permissions
 ('category.view'),
 ('category.create'),
 ('category.update'),
 ('category.delete'),
--- Admin permissions
 ('admin.dashboard'),
 ('admin.users'),
 ('admin.settings');
 
--- Assign permissions to roles
--- Admin: all permissions
+-- Assign permissions to admin
 INSERT INTO roles_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
 WHERE r.name = 'admin';
 
--- Seller: product create/update, order view/manage
+-- Assign permissions to seller
 INSERT INTO roles_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
@@ -665,7 +738,7 @@ AND p.name IN (
     'order.view', 'order.manage'
 );
 
--- Bidder: bid, view products, view orders
+-- Assign permissions to bidder
 INSERT INTO roles_permissions (role_id, permission_id)
 SELECT r.role_id, p.permission_id
 FROM roles r, permissions p
@@ -677,7 +750,7 @@ AND p.name IN (
 );
 
 -- ============================================
--- 13. HELPER FUNCTIONS
+-- 17. HELPER FUNCTIONS
 -- ============================================
 
 -- Function: Calculate user rating percentage
@@ -690,19 +763,19 @@ BEGIN
     SELECT positive_reviews, negative_reviews
     INTO positive_count, total_reviews
     FROM users
-    WHERE user_id = p_user_id;
+    WHERE id = p_user_id;
     
     total_reviews := positive_count + total_reviews;
     
     IF total_reviews = 0 THEN
-        RETURN 100; -- No reviews = 100%
+        RETURN 100;
     END IF;
     
     RETURN ROUND((positive_count::NUMERIC / total_reviews) * 100, 2);
 END;
 $$ LANGUAGE plpgsql;
 
--- Function: Get nested comments tree (recursive)
+-- Function: Get nested comments tree
 CREATE OR REPLACE FUNCTION get_comment_tree(p_product_id INT)
 RETURNS TABLE (
     comment_id INT,
@@ -717,7 +790,6 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     WITH RECURSIVE comment_tree AS (
-        -- Top-level comments
         SELECT 
             c.comment_id,
             c.product_id,
@@ -733,7 +805,6 @@ BEGIN
         
         UNION ALL
         
-        -- Child comments
         SELECT 
             c.comment_id,
             c.product_id,
@@ -752,7 +823,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
--- 14. VIEWS (Useful queries)
+-- 18. VIEWS (Useful queries)
 -- ============================================
 
 -- View: Active auctions with details
@@ -771,17 +842,18 @@ SELECT
     u.negative_reviews
 FROM products p
 JOIN categories c ON p.category_id = c.category_id
-JOIN users u ON p.seller_id = u.user_id
+JOIN users u ON p.seller_id = u.id
 WHERE p.status = 'active'
 AND p.end_time > CURRENT_TIMESTAMP;
 
 -- View: User statistics
 CREATE VIEW user_stats AS
 SELECT 
-    u.user_id,
+    u.id as user_id,
     u.full_name,
     u.email,
     u.status,
+    u.is_verified,
     u.positive_reviews,
     u.negative_reviews,
     CASE 
@@ -791,6 +863,61 @@ SELECT
     COUNT(DISTINCT p.product_id) as products_sold,
     COUNT(DISTINCT b.bid_id) as total_bids
 FROM users u
-LEFT JOIN products p ON u.user_id = p.seller_id
-LEFT JOIN bids b ON u.user_id = b.bidder_id
-GROUP BY u.user_id;
+LEFT JOIN products p ON u.id = p.seller_id
+LEFT JOIN bids b ON u.id = b.bidder_id
+GROUP BY u.id;
+
+-- ============================================
+-- 19. SAMPLE DATA
+-- ============================================
+
+-- Insert sample verified users (without username)
+INSERT INTO users (full_name, email, password, address, is_verified) VALUES
+('John Doe', 'john.doe@example.com', '$2b$10$K7L/YJ4i4aVOuBmxJ7BHWOFbVVjPsJCh3kH6RgJYq6yGqIJXDq4Hy', '123 Main St, New York, NY', TRUE),
+('Jane Smith', 'jane.smith@example.com', '$2b$10$K7L/YJ4i4aVOuBmxJ7BHWOFbVVjPsJCh3kH6RgJYq6yGqIJXDq4Hy', '456 Oak Ave, Los Angeles, CA', TRUE),
+('Bob Wilson', 'bob.wilson@example.com', '$2b$10$K7L/YJ4i4aVOuBmxJ7BHWOFbVVjPsJCh3kH6RgJYq6yGqIJXDq4Hy', '789 Pine Rd, Chicago, IL', TRUE);
+
+-- Assign roles to users (using email to find users)
+INSERT INTO users_roles (user_id, role_id)
+SELECT u.id, r.role_id
+FROM users u, roles r
+WHERE u.email = 'john.doe@example.com' AND r.name = 'seller'
+UNION
+SELECT u.id, r.role_id
+FROM users u, roles r
+WHERE u.email = 'jane.smith@example.com' AND r.name = 'bidder'
+UNION
+SELECT u.id, r.role_id
+FROM users u, roles r
+WHERE u.email = 'bob.wilson@example.com' AND r.name = 'admin';
+
+-- Insert sample conversations
+INSERT INTO conversations (name, is_group, creator_id) VALUES
+(NULL, FALSE, 1),
+('Auction Discussions', TRUE, 1);
+
+-- Insert conversation participants
+INSERT INTO conversation_participants (user_id, conversation_id) VALUES
+(1, 1),
+(2, 1),
+(1, 2),
+(2, 2),
+(3, 2);
+
+-- Insert sample messages
+INSERT INTO messages (conversation_id, sender_id, body) VALUES
+(1, 1, 'Hi, is the vintage watch still available?'),
+(1, 2, 'Yes, it is! Would you like to bid?'),
+(2, 1, 'Welcome to the auction discussion group!'),
+(2, 2, 'Thanks for adding me!'),
+(2, 3, 'Excited to participate in the auctions!');
+
+-- ============================================
+-- 20. COMPLETION MESSAGE
+-- ============================================
+
+SELECT 'Database initialization completed successfully!' AS status;
+SELECT 'Total users: ' || COUNT(*) AS info FROM users;
+SELECT 'Total verified users: ' || COUNT(*) AS info FROM users WHERE is_verified = TRUE;
+SELECT 'Total conversations: ' || COUNT(*) AS info FROM conversations;
+SELECT 'Total messages: ' || COUNT(*) AS info FROM messages;
