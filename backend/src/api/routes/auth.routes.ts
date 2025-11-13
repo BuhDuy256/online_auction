@@ -2,15 +2,28 @@ import express from "express";
 import * as authController from "../controllers/auth.controller";
 import * as otpController from "../controllers/otp.controller";
 import { validate } from "../../middlewares/validate.middleware";
+import { validateRecaptchaV2 } from "../../middlewares/recaptcha.middleware";
 import { signupSchema, loginSchema } from "../schemas/auth.schema";
 import { verifyOTPSchema, resendOTPSchema } from "../schemas/otp.schema";
 import { requireAuth } from "../../middlewares/requireAuth.middleware";
 
 const router = express.Router();
 
-// Public routes
-router.post("/signup", validate(signupSchema), authController.signup);
-router.post("/login", validate(loginSchema), authController.login);
+// Public routes with reCAPTCHA v2
+router.post(
+  "/signup",
+  validate(signupSchema),
+  validateRecaptchaV2,
+  authController.signup
+);
+
+router.post(
+  "/login",
+  validate(loginSchema),
+  validateRecaptchaV2,
+  authController.login
+);
+
 router.post("/refresh", authController.refreshToken);
 router.post("/logout", authController.logout);
 
