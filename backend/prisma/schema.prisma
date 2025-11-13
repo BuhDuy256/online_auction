@@ -15,7 +15,7 @@ model auto_bids {
   bidder_id   Int
   max_amount  Decimal  @db.Decimal(15, 2)
   created_at  DateTime @default(now()) @db.Timestamp(6)
-  users       users    @relation(fields: [bidder_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users       users    @relation(fields: [bidder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products    products @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([product_id, bidder_id])
@@ -30,7 +30,7 @@ model bids {
   amount     Decimal  @db.Decimal(15, 2)
   is_auto    Boolean  @default(false)
   created_at DateTime @default(now()) @db.Timestamp(6)
-  users      users    @relation(fields: [bidder_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [bidder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products   products @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([bidder_id], map: "idx_bids_bidder")
@@ -71,7 +71,7 @@ model notifications {
   read_at         DateTime?                 @db.Timestamp(6)
   action_url      String?                   @db.VarChar(500)
   created_at      DateTime                  @default(now()) @db.Timestamp(6)
-  users           users                     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users           users                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id, is_read, created_at(sort: Desc)], map: "idx_notifications_user_unread")
 }
@@ -84,8 +84,8 @@ model order_chat {
   content                             String
   created_at                          DateTime @default(now()) @db.Timestamp(6)
   orders                              orders   @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
-  users_order_chat_receiver_idTousers users    @relation("order_chat_receiver_idTousers", fields: [receiver_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
-  users_order_chat_sender_idTousers   users    @relation("order_chat_sender_idTousers", fields: [sender_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users_order_chat_receiver_idTousers users    @relation("order_chat_receiver_idTousers", fields: [receiver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_order_chat_sender_idTousers   users    @relation("order_chat_sender_idTousers", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([order_id, created_at], map: "idx_chat_order")
 }
@@ -102,8 +102,8 @@ model orders {
   invoices                      invoices?
   order_chat                    order_chat[]
   products                      products          @relation(fields: [product_id], references: [product_id], onUpdate: NoAction)
-  users_orders_seller_idTousers users             @relation("orders_seller_idTousers", fields: [seller_id], references: [user_id], onUpdate: NoAction)
-  users_orders_winner_idTousers users             @relation("orders_winner_idTousers", fields: [winner_id], references: [user_id], onUpdate: NoAction)
+  users_orders_seller_idTousers users             @relation("orders_seller_idTousers", fields: [seller_id], references: [id], onUpdate: NoAction)
+  users_orders_winner_idTousers users             @relation("orders_winner_idTousers", fields: [winner_id], references: [id], onUpdate: NoAction)
   reviews                       reviews[]
 }
 
@@ -124,7 +124,7 @@ model product_comments {
   product_comments       product_comments?  @relation("product_commentsToproduct_comments", fields: [parent_id], references: [comment_id], onDelete: Cascade, onUpdate: NoAction)
   other_product_comments product_comments[] @relation("product_commentsToproduct_comments")
   products               products           @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
-  users                  users              @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users                  users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([parent_id], map: "idx_comments_parent")
   @@index([product_id, created_at], map: "idx_comments_product")
@@ -138,7 +138,7 @@ model product_descriptions {
   lang           String   @default("vi") @db.VarChar(10)
   version        Int      @default(1)
   created_at     DateTime @default(now()) @db.Timestamp(6)
-  users          users    @relation(fields: [author_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users          users    @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products       products @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([product_id, version])
@@ -157,7 +157,7 @@ model product_rejections {
   bidder_id    Int
   reason       String?
   created_at   DateTime @default(now()) @db.Timestamp(6)
-  users        users    @relation(fields: [bidder_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users        users    @relation(fields: [bidder_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products     products @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([product_id, bidder_id])
@@ -190,8 +190,8 @@ model products {
   product_images                          product_images[]
   product_rejections                      product_rejections[]
   categories                              categories               @relation(fields: [category_id], references: [category_id], onUpdate: NoAction)
-  users_products_highest_bidder_idTousers users?                   @relation("products_highest_bidder_idTousers", fields: [highest_bidder_id], references: [user_id], onUpdate: NoAction)
-  users_products_seller_idTousers         users                    @relation("products_seller_idTousers", fields: [seller_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users_products_highest_bidder_idTousers users?                   @relation("products_highest_bidder_idTousers", fields: [highest_bidder_id], references: [id], onUpdate: NoAction)
+  users_products_seller_idTousers         users                    @relation("products_seller_idTousers", fields: [seller_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   watchlist                               watchlist[]
 
   @@index([category_id, status], map: "idx_products_category_status")
@@ -208,7 +208,7 @@ model refresh_tokens {
   ip_address   String?   @db.VarChar(45)
   created_at   DateTime  @default(now()) @db.Timestamp(6)
   last_used_at DateTime? @db.Timestamp(6)
-  users        users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users        users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_refresh_tokens_user_id")
 }
@@ -224,8 +224,8 @@ model reviews {
   created_at                         DateTime  @default(now()) @db.Timestamp(6)
   updated_at                         DateTime? @db.Timestamp(6)
   orders                             orders    @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
-  users_reviews_reviewer_idTousers   users     @relation("reviews_reviewer_idTousers", fields: [reviewer_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
-  users_reviews_reviewered_idTousers users     @relation("reviews_reviewered_idTousers", fields: [reviewered_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users_reviews_reviewer_idTousers   users     @relation("reviews_reviewer_idTousers", fields: [reviewer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_reviews_reviewered_idTousers users     @relation("reviews_reviewered_idTousers", fields: [reviewered_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([order_id, reviewer_id, reviewered_id])
 }
@@ -260,7 +260,7 @@ model upgrade_requests {
   created_at  DateTime            @default(now()) @db.Timestamp(6)
   approved_at DateTime?           @db.Timestamp(6)
   expires_at  DateTime?           @default(dbgenerated("(CURRENT_TIMESTAMP + '7 days'::interval)")) @db.Timestamp(6)
-  users       users               @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users       users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model user_otps {
@@ -271,36 +271,43 @@ model user_otps {
   created_at  DateTime         @default(now()) @db.Timestamp(6)
   expires_at  DateTime         @db.Timestamp(6)
   consumed_at DateTime?        @db.Timestamp(6)
-  users       users            @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users       users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model users {
-  user_id                                    Int                    @id @default(autoincrement())
-  full_name                                  String                 @db.VarChar(255)
-  email                                      String                 @unique @db.VarChar(255)
-  password                                   String                 @db.VarChar(255)
-  positive_reviews                           Int                    @default(0)
-  negative_reviews                           Int                    @default(0)
-  status                                     user_status_enum       @default(pending_verification)
-  password_updated_at                        DateTime?              @db.Timestamp(6)
-  failed_login_attempts                      Int                    @default(0)
-  last_login_at                              DateTime?              @db.Timestamp(6)
-  created_at                                 DateTime               @default(now()) @db.Timestamp(6)
+  id                                         Int                         @id @default(autoincrement())
+  full_name                                  String                      @db.VarChar(255)
+  email                                      String                      @unique @db.VarChar(255)
+  password                                   String                      @db.VarChar(255)
+  address                                    String?                     @db.VarChar(500)
+  is_verified                                Boolean                     @default(false)
+  positive_reviews                           Int                         @default(0)
+  negative_reviews                           Int                         @default(0)
+  status                                     user_status_enum            @default(pending_verification)
+  password_updated_at                        DateTime?                   @db.Timestamp(6)
+  failed_login_attempts                      Int                         @default(0)
+  last_login_at                              DateTime?                   @db.Timestamp(6)
+  created_at                                 DateTime                    @default(now()) @db.Timestamp(6)
+  updated_at                                 DateTime                    @default(now()) @db.Timestamp(6)
   auto_bids                                  auto_bids[]
   bids                                       bids[]
+  conversation_participants                  conversation_participants[]
+  conversations                              conversations[]
+  messages                                   messages[]
   notifications                              notifications[]
-  order_chat_order_chat_receiver_idTousers   order_chat[]           @relation("order_chat_receiver_idTousers")
-  order_chat_order_chat_sender_idTousers     order_chat[]           @relation("order_chat_sender_idTousers")
-  orders_orders_seller_idTousers             orders[]               @relation("orders_seller_idTousers")
-  orders_orders_winner_idTousers             orders[]               @relation("orders_winner_idTousers")
+  order_chat_order_chat_receiver_idTousers   order_chat[]                @relation("order_chat_receiver_idTousers")
+  order_chat_order_chat_sender_idTousers     order_chat[]                @relation("order_chat_sender_idTousers")
+  orders_orders_seller_idTousers             orders[]                    @relation("orders_seller_idTousers")
+  orders_orders_winner_idTousers             orders[]                    @relation("orders_winner_idTousers")
+  otp_verifications                          otp_verifications[]
   product_comments                           product_comments[]
   product_descriptions                       product_descriptions[]
   product_rejections                         product_rejections[]
-  products_products_highest_bidder_idTousers products[]             @relation("products_highest_bidder_idTousers")
-  products_products_seller_idTousers         products[]             @relation("products_seller_idTousers")
+  products_products_highest_bidder_idTousers products[]                  @relation("products_highest_bidder_idTousers")
+  products_products_seller_idTousers         products[]                  @relation("products_seller_idTousers")
   refresh_tokens                             refresh_tokens[]
-  reviews_reviews_reviewer_idTousers         reviews[]              @relation("reviews_reviewer_idTousers")
-  reviews_reviews_reviewered_idTousers       reviews[]              @relation("reviews_reviewered_idTousers")
+  reviews_reviews_reviewer_idTousers         reviews[]                   @relation("reviews_reviewer_idTousers")
+  reviews_reviews_reviewered_idTousers       reviews[]                   @relation("reviews_reviewered_idTousers")
   upgrade_requests                           upgrade_requests[]
   user_otps                                  user_otps[]
   users_roles                                users_roles[]
@@ -311,7 +318,7 @@ model users_roles {
   user_id Int
   role_id Int
   roles   roles @relation(fields: [role_id], references: [role_id], onDelete: Cascade, onUpdate: NoAction)
-  users   users @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users   users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, role_id])
 }
@@ -321,9 +328,57 @@ model watchlist {
   product_id Int
   created_at DateTime @default(now()) @db.Timestamp(6)
   products   products @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
-  users      users    @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, product_id])
+}
+
+model conversation_participants {
+  user_id         Int
+  conversation_id Int
+  joined_at       DateTime?     @default(now()) @db.Timestamp(6)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, conversation_id])
+}
+
+model conversations {
+  id                        Int                         @id @default(autoincrement())
+  name                      String?                     @db.VarChar(255)
+  is_group                  Boolean?                    @default(false)
+  creator_id                Int
+  created_at                DateTime?                   @default(now()) @db.Timestamp(6)
+  conversation_participants conversation_participants[]
+  users                     users                       @relation(fields: [creator_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages                  messages[]
+}
+
+model messages {
+  id              Int           @id @default(autoincrement())
+  conversation_id Int
+  sender_id       Int
+  body            String
+  created_at      DateTime?     @default(now()) @db.Timestamp(6)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([conversation_id], map: "idx_messages_conversation")
+  @@index([created_at], map: "idx_messages_created")
+  @@index([sender_id], map: "idx_messages_sender")
+}
+
+model otp_verifications {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  otp        String    @db.VarChar(6)
+  is_used    Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_otp_created_at")
+  @@index([is_used], map: "idx_otp_is_used")
+  @@index([user_id], map: "idx_otp_user_id")
 }
 
 enum notification_channel_enum {
