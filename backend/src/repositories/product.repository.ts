@@ -157,10 +157,9 @@ export const createProduct = async (data: {
     end_time: Date;
     auto_extend: boolean;
     description: string;
+    thumbnail: string;
     images: string[];
 }) => {
-    const thumbnail_url = data.images[0];
-
     return await prisma.$transaction(async (tx) => {
         const product = await tx.products.create({
             data: {
@@ -173,7 +172,7 @@ export const createProduct = async (data: {
                 buy_now_price: data.buy_now_price,
                 end_time: data.end_time,
                 auto_extend: data.auto_extend,
-                thumbnail_url,
+                thumbnail_url: data.thumbnail,
                 status: 'active'
             }
         });

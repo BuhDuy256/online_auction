@@ -26,7 +26,7 @@ export const createProduct = async (
     next: NextFunction
 ) => {
     try {
-        const userId = (request as any).user.id;
+        const userId = 3; // Temporary hardcoded user ID
         const result = await productService.createProduct(userId, request.body);
         
         response.status(201).json({

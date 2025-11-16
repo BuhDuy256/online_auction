@@ -9,6 +9,7 @@ export const getProductSchema = async () => {
             "name",
             "parent_category_id",
             "category_id",
+            "thumbnail",
             "images",
             "start_price",
             "step_price",
@@ -31,10 +32,15 @@ export const getProductSchema = async () => {
                 type: "integer",
                 title: "Category"
             },
+            thumbnail: {
+                type: "string",
+                title: "Thumbnail Image",
+                format: "data-url"
+            },
             images: {
                 type: "array",
-                title: "Product Images",
-                minItems: 3,
+                title: "Additional Images",
+                minItems: 2,
                 items: {
                     type: "string",
                     format: "data-url"
@@ -84,6 +90,11 @@ export const getProductSchema = async () => {
             "ui:widget": "select",
             "ui:options": {
                 dataMap
+            }
+        },
+        thumbnail: {
+            "ui:options": {
+                accept: "image/*"
             }
         },
         images: {

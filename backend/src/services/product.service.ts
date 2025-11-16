@@ -26,8 +26,9 @@ export const createProduct = async (userId: number, data: {
     step_price: number;
     buy_now_price?: number;
     description: string;
-    end_time: string;
+    end_time: Date;
     auto_extend: string;
+    thumbnail: string;
     images: string[];
 }) => {
     const product = await productRepository.createProduct({
@@ -37,9 +38,10 @@ export const createProduct = async (userId: number, data: {
         start_price: data.start_price,
         step_price: data.step_price,
         buy_now_price: data.buy_now_price,
-        end_time: new Date(data.end_time),
+        end_time: data.end_time,
         auto_extend: data.auto_extend === 'yes',
         description: data.description,
+        thumbnail: data.thumbnail,
         images: data.images
     });
 
