@@ -5,6 +5,8 @@ import cookieParser from "cookie-parser";
 import authRouter from "./api/routes/auth.routes";
 import productRouter from "./api/routes/product.routes";
 import categoryRouter from "./api/routes/category.routes";
+import formRouter from "./api/routes/form.routes";
+
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 
 const app: Application = express();
@@ -21,6 +23,7 @@ app.use(cookieParser());
 app.use("/auth", authRouter);
 app.use("/categories", categoryRouter);
 app.use("/products", productRouter);
+app.use("/forms", formRouter);
 
 
 app.get('/', (req, res) => {
