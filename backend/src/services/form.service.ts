@@ -1,12 +1,13 @@
 import * as formRepository from "../repositories/form.repository";
 
 export const getProductSchema = async () => {
-    const categories = await formRepository.getCategoriesForSchema();
+    const { parentOptions, dataMap } = await formRepository.getCategoriesForSchema();
 
     const schema = {
         type: "object",
         required: [
             "name",
+            "parent_category_id",
             "category_id",
             "images",
             "start_price",
@@ -21,10 +22,14 @@ export const getProductSchema = async () => {
                 title: "Product Name",
                 maxLength: 500
             },
+            parent_category_id: {
+                type: "integer",
+                title: "Parent Category",
+                oneOf: parentOptions
+            },
             category_id: {
                 type: "integer",
-                title: "Category",
-                oneOf: categories
+                title: "Category"
             },
             images: {
                 type: "array",
@@ -72,8 +77,14 @@ export const getProductSchema = async () => {
         name: {
             "ui:placeholder": "Enter product name"
         },
-        category_id: {
+        parent_category_id: {
             "ui:widget": "select"
+        },
+        category_id: {
+            "ui:widget": "select",
+            "ui:options": {
+                dataMap
+            }
         },
         images: {
             "ui:options": {
@@ -105,6 +116,7 @@ export const getProductSchema = async () => {
 
     return {
         schema,
-        uiSchema
+        uiSchema,
+        dataMap
     };
 };

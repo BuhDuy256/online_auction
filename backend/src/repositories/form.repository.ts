@@ -4,17 +4,21 @@ import * as categoryRepository from "./category.repository";
 export const getCategoriesForSchema = async () => {
     const categoriesData = await categoryRepository.getAllCategories();
     
-    const options: { const: number; title: string }[] = [];
+    const parentOptions: { const: number; title: string }[] = [];
+    const dataMap: Record<string, { const: number; title: string }[]> = {};
     
     for (const parent of categoriesData.data) {
-        for (const subCategory of parent.sub_categories) {
-            options.push({
-                const: subCategory.category_id,
-                title: `${parent.name} - ${subCategory.name}`
-            });
-        }
+        parentOptions.push({
+            const: parent.category_id,
+            title: parent.name
+        });
+        
+        dataMap[parent.category_id.toString()] = parent.sub_categories.map(sub => ({
+            const: sub.category_id,
+            title: sub.name
+        }));
     }
     
-    return options;
+    return { parentOptions, dataMap };
 };
 
