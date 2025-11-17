@@ -44,7 +44,7 @@ export const getProductDetailById = async (
     next: NextFunction
 ) => {
     try {
-        const result = await productService.getProductDetailById(Number(request.params.productId));
+        const result = await productService.getProductDetailById(Number(request.params.id));
         
         response .status(200).json({
             success: true,
@@ -62,7 +62,7 @@ export const getCurrentProductBidById = async (
     next: NextFunction
 ) => {
     try {
-        const result = await productService.getCurrentProductBidById(Number(request.params.productId));
+        const result = await productService.getCurrentProductBidById(Number(request.params.id));
         response .status(200).json({
             success: true,
             data: result
@@ -80,7 +80,7 @@ export const getProductCommentsById = async (
 ) => {
     try {
         const result = await productService.getProductCommentsById(
-            Number(request.params.productId),
+            Number(request.params.id),
             request.query
         );
         response .status(200).json({

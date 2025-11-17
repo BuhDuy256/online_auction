@@ -471,6 +471,3 @@ export const findCommentsById = async (productId: number, page: number, limit: n
         }
     };
 }
-
-
-    
