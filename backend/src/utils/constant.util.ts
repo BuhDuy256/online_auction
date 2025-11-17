@@ -1,1 +1,1 @@
-export const allowedSortFields = ["endTime", "price"] as const;
+export const allowedSortFields = ["endTime", "price", "bidCount"] as const;

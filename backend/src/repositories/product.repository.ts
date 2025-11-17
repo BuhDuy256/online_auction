@@ -4,8 +4,6 @@ import { toSlug } from "../utils/slug.util";
 import { getCategoryIds } from "./category.repository";
 import { SortOption } from "../api/schemas/product.schema";
 
-import * as productRepository from './product.repository';
-
 export interface PaginatedResult<T> {
     data: T[];
     pagination: {
@@ -22,6 +20,7 @@ export interface ProductDetail {
     start_price: number;
     step_price: number;
     buy_now_price?: number;
+    current_price: number;
     created_at: Date;
     end_time: Date;
     bid_count: number;
@@ -47,10 +46,10 @@ export interface ProductDetail {
     };
 }
 
-export interface CurrentBid {
+export interface HighestBidder {
     current_price: number;
     highest_bidder: {
-        id: number,
+        id: number;
         full_name: string;
         positive_reviews: number;
         negative_reviews: number;
@@ -89,55 +88,71 @@ export const fullTextSearch = async (q: string | undefined, page: number, limit:
     const safeQ = escapeQuery(q || "");
     const offset = (page - 1) * limit;
 
-    let orderByClause = 'ORDER BY ';
+    let orderBy: any = { created_at: 'desc' };
     if (sort && Array.isArray(sort) && sort.length > 0) {
-        const orderParts = sort.map((item) => {
+        orderBy = sort.map((item) => {
             const dbField = item.field === 'endTime' ? 'end_time' : item.field === 'price' ? 'current_price' : 'created_at';
-            return `${dbField} ${item.direction.toUpperCase()}`;
+            return { [dbField]: item.direction };
         });
-        orderByClause += orderParts.join(', ');
-    } else {
-        orderByClause += 'relevance DESC';
     }
 
-    const queryStr = `
-        SELECT 
-            product_id,
-            thumbnail_url,
-            name,
-            current_price,
-            highest_bidder_id,
-            status,
-            start_time,
-            end_time,
-            bid_count,
-            ts_rank(fts, websearch_to_tsquery('english', $1)) AS relevance
-        FROM products
-        WHERE 
-            fts @@ websearch_to_tsquery('english', $1)
-            AND status = 'active'
-            AND end_time > NOW()
-        ${orderByClause}
-        LIMIT $2
-        OFFSET $3
-    `;
+    const searchCondition = safeQ ? {
+        fts: {
+            search: safeQ
+        }
+    } : {};
 
-    const [products, totalCount] = await Promise.all([
-        prisma.$queryRawUnsafe(queryStr, safeQ, limit, offset),
-        prisma.$queryRaw<{ count: bigint }[]>`
-            SELECT COUNT(*) as count
-            FROM products
-            WHERE 
-                fts @@ websearch_to_tsquery('english', ${safeQ})
-                AND status = 'active'
-                AND end_time > NOW()
-        `
+    const [products, total] = await Promise.all([
+        prisma.products.findMany({
+            where: {
+                ...searchCondition,
+                status: 'active',
+                end_time: { gt: new Date() }
+            },
+            select: {
+                product_id: true,
+                thumbnail_url: true,
+                name: true,
+                current_price: true,
+                status: true,
+                start_time: true,
+                end_time: true,
+                bid_count: true,
+                users_products_highest_bidder_idTousers: {
+                    select: {
+                        id: true,
+                        full_name: true
+                    }
+                }
+            },
+            orderBy: orderBy,
+            skip: offset,
+            take: limit
+        }),
+        prisma.products.count({
+            where: {
+                ...searchCondition,
+                status: 'active',
+                end_time: { gt: new Date() }
+            }
+        })
     ]);
 
-    const total = Number(totalCount[0].count);
-
     return {
-        data: products,
+        data: products.map(p => ({
+            product_id: p.product_id,
+            thumbnail_url: p.thumbnail_url,
+            name: p.name,
+            current_price: p.current_price,
+            status: p.status,
+            start_time: p.start_time,
+            end_time: p.end_time,
+            bid_count: p.bid_count,
+            highest_bidder: p.users_products_highest_bidder_idTousers ? {
+                id: p.users_products_highest_bidder_idTousers.id,
+                full_name: p.users_products_highest_bidder_idTousers.full_name
+            } : null
+        })),
         pagination: {
             page,
             limit,
@@ -156,7 +171,9 @@ export const findByCategory = async (categorySlug: string, page: number, limit: 
     let orderBy: any = { created_at: 'desc' };
     if (sort && Array.isArray(sort) && sort.length > 0) {
         orderBy = sort.map((item) => {
-            const dbField = item.field === 'endTime' ? 'end_time' : item.field === 'price' ? 'current_price' : 'created_at';
+            const dbField = item.field === 'endTime' ? 'end_time' : 
+                           item.field === 'price' ? 'current_price' : 
+                           item.field === 'bidCount' ? 'bid_count' : 'created_at';
             return { [dbField]: item.direction };
         });
     }
@@ -173,11 +190,16 @@ export const findByCategory = async (categorySlug: string, page: number, limit: 
                 thumbnail_url: true,
                 name: true,
                 current_price: true,
-                highest_bidder_id: true,
                 status: true,
                 start_time: true,
                 end_time: true,
                 bid_count: true,
+                users_products_highest_bidder_idTousers: {
+                    select: {
+                        id: true,
+                        full_name: true
+                    }
+                },
                 categories: {
                     select: {
                         category_id: true,
@@ -201,7 +223,21 @@ export const findByCategory = async (categorySlug: string, page: number, limit: 
     ]);
 
     return {
-        data: products,
+        data: products.map(p => ({
+            product_id: p.product_id,
+            thumbnail_url: p.thumbnail_url,
+            name: p.name,
+            current_price: p.current_price,
+            status: p.status,
+            start_time: p.start_time,
+            end_time: p.end_time,
+            bid_count: p.bid_count,
+            highest_bidder: p.users_products_highest_bidder_idTousers ? {
+                id: p.users_products_highest_bidder_idTousers.id,
+                full_name: p.users_products_highest_bidder_idTousers.full_name
+            } : null,
+            categories: p.categories
+        })),
         pagination: {
             page,
             limit,
@@ -274,6 +310,7 @@ export const findDetailById = async (productId: number): Promise<ProductDetail |
             start_price: true,
             step_price: true,
             buy_now_price: true,
+            current_price: true,
             created_at: true,
             end_time: true,
             bid_count: true,
@@ -335,6 +372,7 @@ export const findDetailById = async (productId: number): Promise<ProductDetail |
         start_price: toNum(product.start_price),
         step_price: toNum(product.step_price),
         buy_now_price: product.buy_now_price ? toNum(product.buy_now_price) : undefined,
+        current_price: toNum(product.current_price),
         created_at: product.created_at,
         end_time: product.end_time,
         bid_count: product.bid_count,
@@ -361,7 +399,7 @@ export const findDetailById = async (productId: number): Promise<ProductDetail |
     };
 };
 
-export const findCurrentBidById = async (productId: number): Promise<CurrentBid> => {
+export const findHighestBidById = async (productId: number): Promise<HighestBidder> => {
     const currentBid = await prisma.products.findUnique({
         where: { product_id: productId },
         select: {

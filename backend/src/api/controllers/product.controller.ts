@@ -56,19 +56,19 @@ export const getProductDetailById = async (
     }
 }
 
-export const getCurrentProductBidById = async (
+export const getHighestBidById = async (
     request: Request,
     response: Response,
     next: NextFunction
 ) => {
     try {
-        const result = await productService.getCurrentProductBidById(Number(request.params.id));
+        const result = await productService.getHighestBidById(Number(request.params.id));
         response .status(200).json({
             success: true,
             data: result
         });
     } catch (error) {
-        console.error('[getCurrentProductBidById] Error:', error);
+        console.error('[getHighestBidById] Error:', error);
         next(error);
     }
 };
