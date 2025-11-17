@@ -53,8 +53,18 @@ export const createProduct = async (data: {
     };
 };
 
-export const getProductById = async (productId: number) => {
-    const product = await productRepository.findById(productId);
+export const getProductDetailById = async (productId: number) => {
+    const product = await productRepository.findDetailById(productId);
     return product;
 };
 
+export const getCurrentProductBidById = async (productId: number) => {
+    const currentBid = await productRepository.findCurrentBidById(productId);
+    return currentBid;
+};
+
+export const getProductCommentsById = async (productId: number, query: any) => {
+    const { page, limit } = query;
+    const comments = await productRepository.findCommentsById(productId, page, limit);
+    return comments;
+};

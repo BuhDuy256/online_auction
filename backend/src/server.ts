@@ -25,7 +25,6 @@ app.use("/categories", categoryRouter);
 app.use("/products", productRouter);
 app.use("/forms", formRouter);
 
-
 app.get('/', (req, res) => {
   res.send('Online Auction API is running');
 });

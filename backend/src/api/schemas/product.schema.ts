@@ -36,7 +36,7 @@ export const searchProductSchema = z.object({
 
 export const createProductSchema = z.object({
     name: z.string().min(1).max(500),
-    parent_category_id: z.number().int().positive(),
+    // parent_category_id: z.number().int().positive(),
     category_id: z.number().int().positive(),
     seller_id: z.number().int().positive(),
     thumbnail: z.string().min(1),
@@ -49,6 +49,12 @@ export const createProductSchema = z.object({
     auto_extend: z.enum(["yes", "no"])
 });
 
+export const getProductCommentsSchema = z.object({
+    page: z.coerce.number().int().min(1).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+
 export type ProductSearchQuery = z.infer<typeof searchProductSchema>;
 export type SortOption = z.infer<typeof sortOptionSchema>;
 export type CreateProductDto = z.infer<typeof createProductSchema>;
+export type GetProductCommentsQuery = z.infer<typeof getProductCommentsSchema>;

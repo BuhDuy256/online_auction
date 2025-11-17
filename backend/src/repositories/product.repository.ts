@@ -4,6 +4,8 @@ import { toSlug } from "../utils/slug.util";
 import { getCategoryIds } from "./category.repository";
 import { SortOption } from "../api/schemas/product.schema";
 
+import * as productRepository from './product.repository';
+
 export interface PaginatedResult<T> {
     data: T[];
     pagination: {
@@ -12,6 +14,47 @@ export interface PaginatedResult<T> {
         total: number;
         totalPages: number;
     };
+}
+
+export interface ProductDetail {
+    thumbnail: string;
+    name: string;
+    start_price: number;
+    step_price: number;
+    buy_now_price?: number;
+    created_at: Date;
+    end_time: Date;
+    bid_count: number;
+    auto_extend: boolean;
+    status: string;
+    images: string[];
+    seller: {
+        id: number;
+        full_name: string;
+        positive_reviews: number;
+        negative_reviews: number;
+    };
+    description: string;
+    category: {
+        id: number;
+        name: string;
+        slug: string;
+        parent?: {
+            id: number;
+            name: string;
+            slug: string;
+        };
+    };
+}
+
+export interface CurrentBid {
+    current_price: number;
+    highest_bidder: {
+        id: number,
+        full_name: string;
+        positive_reviews: number;
+        negative_reviews: number;
+    }
 }
 
 function escapeQuery(q: string) {
@@ -198,6 +241,238 @@ export const createProduct = async (data: {
     });
 };
 
-export const findById = async (productId: number) => {
-    
+const toNum = (value: any): number =>
+    value && typeof value.toNumber === 'function' ? value.toNumber() : Number(value) || 0;
+
+export const findDetailById = async (productId: number): Promise<ProductDetail | null> => {
+    const product = await prisma.products.findUnique({
+        where: { product_id: productId },
+        select: {
+            thumbnail_url: true,
+            name: true,
+            start_price: true,
+            step_price: true,
+            buy_now_price: true,
+            created_at: true,
+            end_time: true,
+            bid_count: true,
+            auto_extend: true,
+            status: true,
+            product_images: {
+                select: {
+                    image_url: true
+                },
+                orderBy: {
+                    image_id: 'asc'
+                }
+            },
+            users_products_seller_idTousers: {
+                select: {
+                    id: true,
+                    full_name: true,
+                    positive_reviews: true,
+                    negative_reviews: true
+                }
+            },
+            product_descriptions: {
+                select: {
+                    content: true
+                },
+                where: {
+                    lang: 'vi'
+                },
+                orderBy: {
+                    version: 'desc'
+                },
+                take: 1
+            },
+            categories: {
+                select: {
+                    category_id: true,
+                    name: true,
+                    slug: true,
+                    parent_id: true,
+                    categories: {
+                        select: {
+                            category_id: true,
+                            name: true,
+                            slug: true
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    if (!product) {
+        return null;
+    }
+
+    return {
+        thumbnail: product.thumbnail_url || '',
+        name: product.name,
+        start_price: toNum(product.start_price),
+        step_price: toNum(product.step_price),
+        buy_now_price: product.buy_now_price ? toNum(product.buy_now_price) : undefined,
+        created_at: product.created_at,
+        end_time: product.end_time,
+        bid_count: product.bid_count,
+        auto_extend: product.auto_extend,
+        status: product.status,
+        images: product.product_images.map(img => img.image_url),
+        seller: {
+            id: product.users_products_seller_idTousers.id,
+            full_name: product.users_products_seller_idTousers.full_name,
+            positive_reviews: product.users_products_seller_idTousers.positive_reviews,
+            negative_reviews: product.users_products_seller_idTousers.negative_reviews
+        },
+        description: product.product_descriptions[0]?.content || '',
+        category: {
+            id: product.categories.category_id,
+            name: product.categories.name,
+            slug: product.categories.slug,
+            parent: product.categories.categories ? {
+                id: product.categories.categories.category_id,
+                name: product.categories.categories.name,
+                slug: product.categories.categories.slug
+            } : undefined
+        }
+    };
 };
+
+
+
+export const findCurrentBidById = async (productId: number): Promise<CurrentBid> => {
+    const currentBid = await prisma.products.findUnique({
+        where: { product_id: productId },
+        select: {
+            current_price: true,
+            users_products_highest_bidder_idTousers: {
+                select: {
+                    id: true,
+                    full_name: true,
+                    positive_reviews: true,
+                    negative_reviews: true
+                }
+            }
+        }
+    });
+
+    return {
+        current_price: toNum(currentBid?.current_price),
+        highest_bidder: {
+            id: currentBid?.users_products_highest_bidder_idTousers?.id ?? 0,
+            full_name: currentBid?.users_products_highest_bidder_idTousers?.full_name ?? '',
+            positive_reviews: currentBid?.users_products_highest_bidder_idTousers?.positive_reviews ?? 0,
+            negative_reviews: currentBid?.users_products_highest_bidder_idTousers?.negative_reviews ?? 0,
+        }
+    }
+}
+
+export interface ProductComment {
+    comment_id: number;
+    content: string;
+    user: {
+        user_id: number;
+        full_name: string;
+    };
+    created_at: Date;
+    updated_at: Date | null;
+    replies: {
+        comment_id: number;
+        content: string;
+        user: {
+            user_id: number;
+            full_name: string;
+        };
+        created_at: Date;
+        updated_at: Date | null;
+    }[];
+}
+
+export const findCommentsById = async (productId: number, page: number, limit: number): Promise<PaginatedResult<ProductComment>> => {
+    const offset = (page - 1) * limit;
+
+    const [parentComments, total] = await Promise.all([
+        prisma.product_comments.findMany({
+            where: {
+                product_id: productId,
+                parent_id: null
+            },
+            select: {
+                comment_id: true,
+                content: true,
+                created_at: true,
+                updated_at: true,
+                users: {
+                    select: {
+                        id: true,
+                        full_name: true
+                    }
+                },
+                other_product_comments: {
+                    select: {
+                        comment_id: true,
+                        content: true,
+                        created_at: true,
+                        updated_at: true,
+                        users: {
+                            select: {
+                                id: true,
+                                full_name: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        created_at: 'asc'
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: limit
+        }),
+        prisma.product_comments.count({
+            where: {
+                product_id: productId,
+                parent_id: null
+            }
+        })
+    ]);
+
+    const data = parentComments.map(comment => ({
+        comment_id: comment.comment_id,
+        content: comment.content,
+        user: {
+            user_id: comment.users.id,
+            full_name: comment.users.full_name
+        },
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        replies: comment.other_product_comments.map(reply => ({
+            comment_id: reply.comment_id,
+            content: reply.content,
+            user: {
+                user_id: reply.users.id,
+                full_name: reply.users.full_name
+            },
+            created_at: reply.created_at,
+            updated_at: reply.updated_at
+        }))
+    }));
+
+    return {
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit)
+        }
+    };
+}
+
+
+    

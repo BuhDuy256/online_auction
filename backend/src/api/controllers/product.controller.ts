@@ -38,13 +38,13 @@ export const createProduct = async (
     }
 };
 
-export const getProductById = async (
+export const getProductDetailById = async (
     request: Request,
     response: Response,
     next: NextFunction
 ) => {
     try {
-        const result = await productService.getProductById(Number(request.params.productId));
+        const result = await productService.getProductDetailById(Number(request.params.productId));
         
         response .status(200).json({
             success: true,
@@ -55,3 +55,41 @@ export const getProductById = async (
         next(error);
     }
 }
+
+export const getCurrentProductBidById = async (
+    request: Request,
+    response: Response,
+    next: NextFunction
+) => {
+    try {
+        const result = await productService.getCurrentProductBidById(Number(request.params.productId));
+        response .status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('[getCurrentProductBidById] Error:', error);
+        next(error);
+    }
+};
+
+export const getProductCommentsById = async (
+    request: Request,
+    response: Response,
+    next: NextFunction
+) => {
+    try {
+        const result = await productService.getProductCommentsById(
+            Number(request.params.productId),
+            request.query
+        );
+        response .status(200).json({
+            success: true,
+            data: result.data,
+            pagination: result.pagination,
+        });
+    } catch (error) {
+        console.error('[getProductCommentsById] Error:', error);
+        next(error);
+    }
+};
