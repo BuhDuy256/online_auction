@@ -84,14 +84,16 @@ function escapeQuery(q: string) {
         .trim();
 }
 
-export const fullTextSearch = async (q: string | undefined, page: number, limit: number, sort?: SortOption) => {
+export const fullTextSearch = async (q: string | undefined, page: number, limit: number, sort?: SortOption, excludeProductId?: number) => {
     const safeQ = escapeQuery(q || "");
     const offset = (page - 1) * limit;
 
     let orderBy: any = { created_at: 'desc' };
     if (sort && Array.isArray(sort) && sort.length > 0) {
         orderBy = sort.map((item) => {
-            const dbField = item.field === 'endTime' ? 'end_time' : item.field === 'price' ? 'current_price' : 'created_at';
+            const dbField = item.field === 'endTime' ? 'end_time' : 
+                           item.field === 'price' ? 'current_price' : 
+                           item.field === 'bidCount' ? 'bid_count' : 'created_at';
             return { [dbField]: item.direction };
         });
     }
@@ -102,13 +104,19 @@ export const fullTextSearch = async (q: string | undefined, page: number, limit:
         }
     } : {};
 
+    const whereClause: any = {
+        ...searchCondition,
+        status: 'active',
+        end_time: { gt: new Date() }
+    };
+
+    if (excludeProductId) {
+        whereClause.product_id = { not: excludeProductId };
+    }
+
     const [products, total] = await Promise.all([
         prisma.products.findMany({
-            where: {
-                ...searchCondition,
-                status: 'active',
-                end_time: { gt: new Date() }
-            },
+            where: whereClause,
             select: {
                 product_id: true,
                 thumbnail_url: true,
@@ -130,11 +138,7 @@ export const fullTextSearch = async (q: string | undefined, page: number, limit:
             take: limit
         }),
         prisma.products.count({
-            where: {
-                ...searchCondition,
-                status: 'active',
-                end_time: { gt: new Date() }
-            }
+            where: whereClause
         })
     ]);
 
@@ -162,7 +166,7 @@ export const fullTextSearch = async (q: string | undefined, page: number, limit:
     };
 };
 
-export const findByCategory = async (categorySlug: string, page: number, limit: number, sort?: SortOption): Promise<PaginatedResult<any>> => {
+export const findByCategory = async (categorySlug: string, page: number, limit: number, sort?: SortOption, excludeProductId?: number): Promise<PaginatedResult<any>> => {
     const slug = toSlug(categorySlug);
     const offset = (page - 1) * limit;
 
@@ -178,13 +182,19 @@ export const findByCategory = async (categorySlug: string, page: number, limit: 
         });
     }
 
+    const whereClause: any = {
+        category_id: { in: categoryIds },
+        status: 'active',
+        end_time: { gt: new Date() }
+    };
+
+    if (excludeProductId) {
+        whereClause.product_id = { not: excludeProductId };
+    }
+
     const [products, total] = await Promise.all([
         prisma.products.findMany({
-            where: {
-                category_id: { in: categoryIds },
-                status: 'active',
-                end_time: { gt: new Date() }
-            },
+            where: whereClause,
             select: {
                 product_id: true,
                 thumbnail_url: true,
@@ -214,11 +224,7 @@ export const findByCategory = async (categorySlug: string, page: number, limit: 
         }),
 
         prisma.products.count({
-            where: {
-                category_id: { in: categoryIds },
-                status: 'active',
-                end_time: { gt: new Date() }
-            }
+            where: whereClause
         })
     ]);
 

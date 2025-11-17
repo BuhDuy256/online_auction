@@ -2,21 +2,14 @@ import * as productRepository from '../repositories/product.repository';
 import { searchProductSchema, getProductCommentsSchema } from '../api/schemas/product.schema';
 
 export const searchProducts = async (query: any) => {
-    // Default values are handled in validate middleware
-    const { q, category, page, limit, sort } = searchProductSchema.parse(query);
-
-    // Handle empty q & category in validate middleware
+    const { q, category, page, limit, sort, exclude } = searchProductSchema.parse(query);
 
     if (category) {
-        const result = await productRepository.findByCategory(category, page, limit, sort);
-        // Don't need to throw NotFoundError here, just return empty result and let frontend handle it
-        // if (result.data.length === 0) {
-        //     throw new NotFoundError(`No products found for category: ${categorySlug}`);
-        // }
+        const result = await productRepository.findByCategory(category, page, limit, sort, exclude);
         return result;
     }
 
-    return await productRepository.fullTextSearch(q, page, limit, sort);
+    return await productRepository.fullTextSearch(q, page, limit, sort, exclude);
 };
 
 export const createProduct = async (data: {
