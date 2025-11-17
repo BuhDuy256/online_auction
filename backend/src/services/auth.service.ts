@@ -11,6 +11,7 @@ import {
   hashToken,
   getRefreshTokenExpiry,
 } from "../utils/jwt.util";
+const OTP_EXPIRY_MINUTES = 15;
 
 export const signupUser = async (userData: any) => {
   const { recaptchaToken, ...restUserData } = userData;
@@ -30,7 +31,12 @@ export const signupUser = async (userData: any) => {
 
   // Generate and send OTP
   const otp = generateOTP(6);
-  await otpRepo.createOTP(user.id, otp);
+  await otpRepo.createOTP(
+    user.id,
+    otp,
+    new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
+    "signup"
+  );
   await sendOTPEmail(user.email, otp, user.full_name);
 
   return {
@@ -64,7 +70,12 @@ export const loginUser = async (
     // Resend OTP for unverified users
     await otpRepo.deleteUserOTPs(user.id);
     const otp = generateOTP(6);
-    await otpRepo.createOTP(user.id, otp);
+    await otpRepo.createOTP(
+      user.id,
+      otp,
+      new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
+      "signup"
+    );
     await sendOTPEmail(user.email, otp, user.full_name);
 
     // Return user info without tokens
@@ -114,6 +125,54 @@ export const loginUser = async (
   };
 };
 
+export const requestPasswordReset = async (email: string) => {
+  const user = await userRepo.findByEmail(email);
+
+  // Luôn trả về OK (bảo mật)
+  if (!user || !user.is_verified) {
+    return {
+      message: "If an account with that email exists, an OTP has been sent.",
+    };
+  }
+
+  const otp = generateOTP(6);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  // Gửi OTP với purpose 'reset_password'
+  await otpRepo.createOTP(user.id, otp, expiresAt, "reset_password");
+  await sendOTPEmail(user.email, otp, user.full_name);
+
+  return { message: "An OTP has been sent to your email." };
+};
+
+/**
+ * --- HÀM MỚI: RESET MẬT KHẨU BẰNG OTP ---
+ */
+export const resetPasswordWithOTP = async (
+  email: string,
+  otp: string,
+  newPassword: string
+) => {
+  const user = await userRepo.findByEmail(email);
+  if (!user) throw new Error("Invalid email.");
+
+  // 1. Xác thực OTP với purpose 'reset_password'
+  const validToken = await otpRepo.findValidOTP(user.id, otp, "reset_password");
+  if (!validToken) throw new Error("Invalid or expired OTP.");
+
+  // 2. Cập nhật mật khẩu mới
+  const hashedPassword = await hashPassword(newPassword);
+  await userRepo.updatePassword(user.id, hashedPassword);
+
+  // 3. Reset failed_login_attempts (như flow của bạn yêu cầu)
+  // await userRepo.resetLoginAttempts(user.id); // (Bạn cần tạo hàm này trong repo)
+
+  // 4. Đánh dấu OTP là đã dùng
+  await otpRepo.markOTPAsUsed(validToken.otp_id);
+
+  return { message: "Password has been reset successfully." };
+};
+
 export const refreshAccessToken = async (refreshToken: string) => {
   try {
     // Verify the refresh token
@@ -159,7 +218,7 @@ export const logoutAllDevices = async (userId: number) => {
 };
 
 export const verifyOTP = async (userId: number, otp: string) => {
-  const otpRecord = await otpRepo.findValidOTP(userId, otp);
+  const otpRecord = await otpRepo.findValidOTP(userId, otp, "signup");
 
   if (!otpRecord) {
     throw new Error("Invalid OTP code");
@@ -170,7 +229,7 @@ export const verifyOTP = async (userId: number, otp: string) => {
   }
 
   // Mark OTP as used
-  await otpRepo.markOTPAsUsed(otpRecord.id);
+  await otpRepo.markOTPAsUsed(otpRecord.otp_id);
 
   // Verify user
   const verifiedUser = await userRepo.verifyUser(userId);
@@ -221,7 +280,12 @@ export const resendOTP = async (userId: number) => {
 
   // Generate and send new OTP
   const otp = generateOTP(6);
-  await otpRepo.createOTP(userId, otp);
+  await otpRepo.createOTP(
+    userId,
+    otp,
+    new Date(Date.now() + 15 * 60 * 1000),
+    "signup"
+  );
   await sendOTPEmail(user.email, otp, user.full_name);
 
   return { message: "New OTP sent to your email" };

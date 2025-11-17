@@ -146,3 +146,35 @@ export const getMe = async (
     next(error);
   }
 };
+
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email } = req.body;
+    const result = await authService.requestPasswordReset(email);
+    res.status(200).json(result);
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email, otp, new_password } = req.body;
+    const result = await authService.resetPasswordWithOTP(
+      email,
+      otp,
+      new_password
+    );
+    res.status(200).json(result);
+  } catch (error: any) {
+    next(error);
+  }
+};

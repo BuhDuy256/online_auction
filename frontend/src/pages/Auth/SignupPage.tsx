@@ -2,12 +2,11 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ReCAPTCHA from "react-google-recaptcha";
 import { toast } from "react-toastify";
-import * as authService from "../../services/authService"; // Assuming service is here
 import AuthLayout from "../../layouts/AuthLayout"; // 1. Import layout
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
-import { signup } from "../../services/authService"; // Assuming service is here
 import "./AuthForms.css"; // 7. Import common CSS
+import { useAuth } from "../../hooks/useAuth";
 
 // 2. Get Site Key
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
@@ -15,6 +14,7 @@ const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 export default function SignupPage() {
   const navigate = useNavigate();
   const recaptchaRef = useRef<ReCAPTCHA>(null);
+  const { signup } = useAuth();
 
   // 3. Update state according to new schema
   const [formData, setFormData] = useState({
@@ -55,7 +55,7 @@ export default function SignupPage() {
       const { confirm_password, ...signupData } = formData;
 
       // 6. Send new payload, including token
-      const response = await authService.signup({
+      const response = await signup({
         ...signupData,
         recaptchaToken,
       });

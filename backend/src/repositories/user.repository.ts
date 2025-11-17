@@ -56,3 +56,14 @@ export const findByIdWithRoles = async (userId: number) => {
   });
   return user;
 };
+
+export const updatePassword = async (
+  userId: number,
+  hashedPassword: string
+) => {
+  const user = await prisma.users.update({
+    where: { id: userId },
+    data: { password: hashedPassword },
+  });
+  return user;
+};

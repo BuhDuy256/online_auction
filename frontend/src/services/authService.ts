@@ -92,3 +92,19 @@ export const verifyOTP = async (userId: number, otp: string) => {
 export const resendOTP = async (userId: number) => {
   return apiClient.post("/auth/resend-otp", { user_id: userId }, false);
 };
+
+export const forgotPassword = async (email: string) => {
+  return apiClient.post("/auth/forgot-password", { email }, false);
+};
+
+export const resetPasswordWithOTP = async (
+  email: string,
+  otp: string,
+  newPassword: string
+) => {
+  return apiClient.post(
+    "/auth/reset-password",
+    { email, otp, newPassword },
+    false
+  );
+};

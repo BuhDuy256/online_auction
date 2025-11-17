@@ -101,6 +101,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const forgotPassword = async (email: string): Promise<any> => {
+    return authService.forgotPassword(email);
+  };
+
+  const resetPassword = async (
+    email: string,
+    otp: string,
+    newPassword: string
+  ): Promise<any> => {
+    return authService.resetPasswordWithOTP(email, otp, newPassword);
+  };
+
   const hasRole = (role: string): boolean => {
     return user?.roles?.includes(role as any) || false;
   };
@@ -113,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hasRole,
       login,
       signup,
+      forgotPassword,
+      resetPassword,
       logout,
     }),
     [user, isLoading]

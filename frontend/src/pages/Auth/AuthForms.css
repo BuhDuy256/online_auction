@@ -1,4 +1,5 @@
 /* Link for "Forgot Password?" */
+
 .auth-link {
   font-size: 13px;
   color: #00376b;
@@ -12,9 +13,20 @@
   color: #0056a3;
 }
 
-/* Button to switch between Login/Signup */
 .switch-auth-button {
   width: 100%;
   margin-top: 10px;
-  font-weight: 600 !important; /* Use !important if needed to override */
+  font-weight: 600 !important;
+}
+
+.auth-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.auth-label-enter-otp {
+  margin-bottom: 0px;
 }

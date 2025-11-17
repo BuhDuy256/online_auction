@@ -3,7 +3,12 @@ import * as authController from "../controllers/auth.controller";
 import * as otpController from "../controllers/otp.controller";
 import { validate } from "../../middlewares/validate.middleware";
 import { validateRecaptchaV2 } from "../../middlewares/recaptcha.middleware";
-import { signupSchema, loginSchema } from "../schemas/auth.schema";
+import {
+  signupSchema,
+  loginSchema,
+  resetPasswordSchema,
+  forgotPasswordSchema,
+} from "../schemas/auth.schema";
 import { verifyOTPSchema, resendOTPSchema } from "../schemas/otp.schema";
 import { requireAuth } from "../../middlewares/requireAuth.middleware";
 
@@ -30,6 +35,16 @@ router.post("/logout", authController.logout);
 // OTP routes
 router.post("/verify-otp", validate(verifyOTPSchema), otpController.verifyOTP);
 router.post("/resend-otp", validate(resendOTPSchema), otpController.resendOTP);
+router.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  authController.forgotPassword
+);
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  authController.resetPassword
+);
 
 // Protected routes
 router.get("/me", requireAuth, authController.getMe);

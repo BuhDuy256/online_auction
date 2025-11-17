@@ -75,7 +75,7 @@ const VerifyOTPPage: React.FC = () => {
       const response = await authService.verifyOTP(userId, otp);
 
       // Success: Save token and log user in
-      const { accessToken, user } = response.data;
+      const { accessToken } = response.data;
       localStorage.setItem("token", accessToken);
 
       toast.success("Account verified successfully! 🎉");

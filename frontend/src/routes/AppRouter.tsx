@@ -15,6 +15,7 @@ import SignupPage from "../pages/Auth/SignupPage";
 import LoginPage from "../pages/Auth/LoginPage";
 import VerifyOTPPage from "../pages/Auth/VerifyOTPPage"; // Add this
 import HomePage from "../pages/HomePage";
+import ForgotPasswordPage from "../pages/Auth/ForgotPasswordPage";
 
 const AppRouter = () => {
   return (
@@ -34,11 +35,12 @@ const AppRouter = () => {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/verify-otp" element={<VerifyOTPPage />} />{" "}
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         {/* Add this */}
       </Route>
 
       {/* ============================================== */}
-      {/* TUYẾN ĐƯỜG ĐƯỢC BẢO VỆ (RBAC) */}
+      {/* TUYẾN ĐƯỜNG ĐƯỢC BẢO VỆ (RBAC) */}
       {/* ============================================== */}
       <Route
         element={
