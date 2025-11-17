@@ -27,7 +27,6 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ title, children }) => {
             src="/assets/auctionary_logo.png" // Change logo here
             alt="Auctionary Logo"
             className="auth-logo"
-            onClick={() => navigate("/")} // Click logo to navigate home
           />
           <h1 className="auth-title">{title}</h1>
 

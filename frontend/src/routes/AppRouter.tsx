@@ -8,17 +8,12 @@ import PublicOnlyRoute from "./PublicOnlyRoute";
 import { ROLES } from "../constants/roles";
 
 // 3. Import các trang
-import UnderDevelopmentPage from "../pages/UnderDevelopmentPage"; // Trang đang phát triển
-import UnauthorizedPage from "../pages/UnauthorizedPage"; // Trang 403
-import NotFoundPage from "../pages/NotFoundPage"; // Trang 404
+import UnderDevelopmentPage from "../pages/UnderDevelopmentPage";
+import UnauthorizedPage from "../pages/UnauthorizedPage";
+import NotFoundPage from "../pages/NotFoundPage";
 import SignupPage from "../pages/Auth/SignupPage";
 import LoginPage from "../pages/Auth/LoginPage";
-
-// (Import các trang thật của bạn)
-// import HomePage from "../pages/HomePage";
-// import LoginPage from "../pages/LoginPage";
-// import ProfilePage from "../pages/ProfilePage";
-// import AdminDashboard from "../pages/AdminDashboard";
+import VerifyOTPPage from "../pages/Auth/VerifyOTPPage"; // Add this
 
 const AppRouter = () => {
   return (
@@ -26,22 +21,24 @@ const AppRouter = () => {
       {/* ============================================== */}
       {/* TUYẾN ĐƯỜNG CÔNG KHAI (Guest, Bidder, Seller, Admin) */}
       {/* ============================================== */}
-      <Route path="/" element={<UnderDevelopmentPage /* <HomePage /> */ />} />
+      <Route path="/" element={<UnderDevelopmentPage />} />
       <Route path="/auction/:id" element={<UnderDevelopmentPage />} />
-      <Route path="/unauthorized" element={<UnauthorizedPage />} />{" "}
-      {/* Trang 403 */}
-      <Route path="*" element={<NotFoundPage />} /> {/* Trang 404 */}
+      <Route path="/unauthorized" element={<UnauthorizedPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+
       {/* ============================================== */}
       {/* TUYẾN ĐƯỜNG CÔNG KHAI (CHỈ CHO KHÁCH) */}
       {/* ============================================== */}
       <Route element={<PublicOnlyRoute />}>
-        <Route path="/login" element={<LoginPage /* <LoginPage /> */ />} />
-        <Route path="/signup" element={<SignupPage /* <RegisterPage /> */ />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify-otp" element={<VerifyOTPPage />} />{" "}
+        {/* Add this */}
       </Route>
+
       {/* ============================================== */}
       {/* TUYẾN ĐƯỜG ĐƯỢC BẢO VỆ (RBAC) */}
       {/* ============================================== */}
-      {/* --- Cần ít nhất là BIDDER (Tức là tất cả user đã login) --- */}
       <Route
         element={
           <ProtectedRoute
@@ -49,20 +46,16 @@ const AppRouter = () => {
           />
         }
       >
-        <Route
-          path="/profile"
-          element={<UnderDevelopmentPage /* <ProfilePage /> */ />}
-        />
-        {/* (Các trang đấu giá, xem bid history...) */}
+        <Route path="/profile" element={<UnderDevelopmentPage />} />
       </Route>
-      {/* --- Cần ít nhất là SELLER (Seller và Admin có thể vào) --- */}
+
       <Route
         element={<ProtectedRoute allowedRoles={[ROLES.SELLER, ROLES.ADMIN]} />}
       >
         <Route path="/my-auctions" element={<UnderDevelopmentPage />} />
         <Route path="/auctions/new" element={<UnderDevelopmentPage />} />
       </Route>
-      {/* --- Chỉ dành cho ADMIN --- */}
+
       <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]} />}>
         <Route path="/admin/dashboard" element={<UnderDevelopmentPage />} />
         <Route path="/admin/users" element={<UnderDevelopmentPage />} />

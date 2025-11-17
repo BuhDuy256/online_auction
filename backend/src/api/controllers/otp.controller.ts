@@ -9,15 +9,21 @@ export const verifyOTP = async (
   try {
     const { user_id, otp } = req.body;
 
-    const user = await authService.verifyOTP(user_id, otp);
+    const result = await authService.verifyOTP(user_id, otp);
+
+    // Set refresh token as httpOnly cookie
+    res.cookie("refreshToken", result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
 
     res.status(200).json({
       message: "Email verified successfully",
       data: {
-        id: user.id,
-        email: user.email,
-        full_name: user.full_name,
-        is_verified: user.is_verified,
+        accessToken: result.accessToken,
+        user: result.user,
       },
     });
   } catch (error: any) {

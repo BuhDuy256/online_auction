@@ -54,13 +54,30 @@ export const loginUser = async (
     throw new Error("Invalid email");
   }
 
-  if (!user.is_verified) {
-    throw new Error("Please verify your email before logging in");
-  }
-
   const isPasswordValid = await comparePassword(password, user.password);
   if (!isPasswordValid) {
     throw new Error("Invalid password");
+  }
+
+  // CHANGED: Allow unverified users to "login" but return different response
+  if (!user.is_verified) {
+    // Resend OTP for unverified users
+    await otpRepo.deleteUserOTPs(user.id);
+    const otp = generateOTP(6);
+    await otpRepo.createOTP(user.id, otp);
+    await sendOTPEmail(user.email, otp, user.full_name);
+
+    // Return user info without tokens
+    return {
+      requiresVerification: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        is_verified: false,
+      },
+      message: "Please verify your email. A new OTP has been sent.",
+    };
   }
 
   const userPayload = {
@@ -68,7 +85,7 @@ export const loginUser = async (
     email: user.email,
   };
 
-  // Generate tokens
+  // Generate tokens for verified users
   const accessToken = generateAccessToken(userPayload);
   const refreshToken = generateRefreshToken(userPayload);
 
@@ -85,12 +102,14 @@ export const loginUser = async (
   );
 
   return {
+    requiresVerification: false,
     accessToken,
     refreshToken,
     user: {
       id: user.id,
       email: user.email,
       full_name: user.full_name,
+      is_verified: true,
     },
   };
 };
@@ -159,7 +178,31 @@ export const verifyOTP = async (userId: number, otp: string) => {
   // Send welcome email
   await sendWelcomeEmail(verifiedUser.email, verifiedUser.full_name);
 
-  return verifiedUser;
+  // Generate tokens for newly verified user
+  const userPayload = {
+    id: verifiedUser.id,
+    email: verifiedUser.email,
+  };
+
+  const accessToken = generateAccessToken(userPayload);
+  const refreshToken = generateRefreshToken(userPayload);
+
+  // Save refresh token
+  const tokenHash = hashToken(refreshToken);
+  const expiresAt = getRefreshTokenExpiry();
+
+  await tokenRepo.createRefreshToken(verifiedUser.id, tokenHash, expiresAt);
+
+  return {
+    accessToken,
+    refreshToken,
+    user: {
+      id: verifiedUser.id,
+      email: verifiedUser.email,
+      full_name: verifiedUser.full_name,
+      is_verified: true,
+    },
+  };
 };
 
 export const resendOTP = async (userId: number) => {

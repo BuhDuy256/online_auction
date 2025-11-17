@@ -71,3 +71,24 @@ export const logout = async () => {
     localStorage.removeItem("token");
   }
 };
+
+/**
+ * Verifies the OTP code sent to user's email
+ * @param {number} userId - User's ID
+ * @param {string} otp - 6-digit OTP code
+ * @returns {Promise<object>} Auth tokens and user data
+ * @throws {Error} If verification fails
+ */
+export const verifyOTP = async (userId: number, otp: string) => {
+  return apiClient.post("/auth/verify-otp", { user_id: userId, otp }, false);
+};
+
+/**
+ * Resends OTP code to user's email
+ * @param {number} userId - User's ID
+ * @returns {Promise<object>} Success message
+ * @throws {Error} If request fails
+ */
+export const resendOTP = async (userId: number) => {
+  return apiClient.post("/auth/resend-otp", { user_id: userId }, false);
+};

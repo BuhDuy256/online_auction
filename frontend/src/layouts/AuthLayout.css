@@ -39,7 +39,7 @@
   height: auto;
   margin-bottom: 16px;
   opacity: 0.9;
-  cursor: pointer;
+  /* cursor: pointer; */
   animation: fadeInDown 0.6s ease-out;
 }
 

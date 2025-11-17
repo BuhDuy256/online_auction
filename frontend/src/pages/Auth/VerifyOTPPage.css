@@ -1,0 +1,181 @@
+.verify-otp-container {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Info Message */
+.otp-info-message {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.otp-info-message p {
+  font-size: 14px;
+  color: #262626;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.custom-message {
+  font-weight: 600;
+  color: #0095f6;
+}
+
+.secondary-text {
+  color: #8e8e8e;
+  font-size: 13px;
+}
+
+.otp-info-message strong {
+  font-weight: 600;
+  color: #000;
+}
+
+/* OTP Form */
+.otp-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Error Message Box */
+.error-message-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: #fff5f6;
+  border: 1px solid #ed4956;
+  border-radius: 6px;
+  color: #ed4956;
+  font-size: 13px;
+  margin: 16px 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.error-icon {
+  font-size: 16px;
+}
+
+/* Verify Button */
+.verify-button {
+  width: 100%;
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.verify-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Resend Section */
+.resend-section {
+  text-align: center;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #dbdbdb;
+}
+
+.resend-text {
+  font-size: 14px;
+  color: #8e8e8e;
+  margin-bottom: 12px;
+}
+
+.resend-button {
+  background: none;
+  border: none;
+  color: #0095f6;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.resend-button:hover {
+  background-color: rgba(0, 149, 246, 0.1);
+}
+
+.resend-button:disabled {
+  color: #8e8e8e;
+  cursor: not-allowed;
+}
+
+.cooldown-text {
+  font-size: 14px;
+  color: #8e8e8e;
+}
+
+.countdown {
+  font-weight: 600;
+  color: #262626;
+}
+
+/* Back to Login */
+.back-to-login {
+  text-align: center;
+  margin-top: 24px;
+}
+
+.text-button {
+  background: none;
+  border: none;
+  color: #8e8e8e;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px;
+  transition: color 0.2s ease;
+}
+
+.text-button:hover {
+  color: #262626;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 480px) {
+  .verify-otp-container {
+    padding: 0 16px;
+  }
+
+  .otp-info-message p {
+    font-size: 13px;
+  }
+
+  .verify-button {
+    font-size: 15px;
+    padding: 12px;
+  }
+}
+
+/* Accessibility */
+.verify-button:focus,
+.resend-button:focus,
+.text-button:focus {
+  outline: 2px solid #0095f6;
+  outline-offset: 2px;
+}

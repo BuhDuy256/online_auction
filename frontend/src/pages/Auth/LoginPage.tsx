@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ReCAPTCHA from "react-google-recaptcha";
-
+import { toast } from "react-toastify";
+import * as authService from "../../services/authService"; // Assuming service is here
 import AuthLayout from "../../layouts/AuthLayout"; // 1. Import layout
 import Button from "../../components/ui/Button"; // Assuming Button/Input are in ui/
 import Input from "../../components/ui/Input";
@@ -27,7 +28,7 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
 
-    // 4. Get reCAPTCHA token
+    // Get reCAPTCHA token
     const recaptchaToken = recaptchaRef.current?.getValue();
     if (!recaptchaToken) {
       setError("Please complete the reCAPTCHA.");
@@ -36,12 +37,38 @@ export default function LoginPage() {
     }
 
     try {
-      // 5. Call login function with the new schema
-      await login(email, password, recaptchaToken);
-      // useAuth will automatically redirect on success
+      // Call login with the new schema
+      const response = await authService.login(email, password, recaptchaToken);
+
+      // Check if user requires verification
+      if (response.data.requiresVerification) {
+        toast.error("Please verify your account first.");
+        navigate("/verify-otp", {
+          state: {
+            email: email,
+            user_id: response.data.user.id, // Pass user_id for OTP verification
+            message:
+              "Your account is not verified. A new verification code has been sent to your email.",
+          },
+        });
+        return;
+      }
+
+      // Verified user - save token and login
+      localStorage.setItem("token", response.data.accessToken);
+
+      try {
+        const userResponse = await authService.getMe();
+        // Use AuthContext to set user state (if needed)
+        toast.success("Welcome back!");
+        navigate("/");
+      } catch (error) {
+        console.error("Failed to fetch user data after login:", error);
+        toast.error("Login succeeded but failed to verify user.");
+      }
     } catch (err: any) {
       setError(err.message || "Login failed.");
-      recaptchaRef.current?.reset(); // Reset reCAPTCHA on error
+      recaptchaRef.current?.reset();
     } finally {
       setIsLoading(false);
     }
@@ -76,7 +103,14 @@ export default function LoginPage() {
 
         <div className="button-group">
           <Button type="submit" variant="primary" disabled={isLoading}>
-            {isLoading ? "Logging in..." : "Log in"}
+            {isLoading ? (
+              <>
+                <span className="spinner"></span>
+                Logging in...
+              </>
+            ) : (
+              "Log in"
+            )}
           </Button>
         </div>
       </form>

@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ReCAPTCHA from "react-google-recaptcha";
-
+import { toast } from "react-toastify";
+import * as authService from "../../services/authService"; // Assuming service is here
 import AuthLayout from "../../layouts/AuthLayout"; // 1. Import layout
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
@@ -54,13 +55,25 @@ export default function SignupPage() {
       const { confirm_password, ...signupData } = formData;
 
       // 6. Send new payload, including token
-      await signup({
+      const response = await authService.signup({
         ...signupData,
         recaptchaToken,
       });
 
-      alert("Signup successful! Please log in.");
-      navigate("/login");
+      const newUserData = response.data;
+
+      toast.success(
+        newUserData.message || "Account created! Please verify your email."
+      );
+
+      // Navigate to OTP verification page with email
+      navigate("/verify-otp", {
+        state: {
+          email: newUserData.email,
+          user_id: newUserData.id,
+          message: "Account created successfully! Please verify your email.",
+        },
+      });
     } catch (err: any) {
       setError(err.message || "Signup failed.");
       recaptchaRef.current?.reset();
@@ -125,7 +138,14 @@ export default function SignupPage() {
 
         <div className="button-group">
           <Button type="submit" variant="primary" disabled={isLoading}>
-            {isLoading ? "Signing up..." : "Sign Up"}
+            {isLoading ? (
+              <>
+                <span className="spinner"></span>
+                Signing up...
+              </>
+            ) : (
+              "Sign Up"
+            )}
           </Button>
         </div>
       </form>

@@ -28,7 +28,18 @@ export const login = async (
 
     const result = await authService.loginUser(req.body, deviceInfo, ipAddress);
 
-    // Set refresh token as httpOnly cookie
+    // Check if user requires verification
+    if (result.requiresVerification) {
+      return res.status(200).json({
+        message: result.message,
+        data: {
+          requiresVerification: true,
+          user: result.user,
+        },
+      });
+    }
+
+    // Set refresh token as httpOnly cookie for verified users
     res.cookie("refreshToken", result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
