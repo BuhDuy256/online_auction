@@ -63,7 +63,7 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL, -- bcrypt/scrypt hash
+    password VARCHAR(255), -- bcrypt/scrypt hash
     address VARCHAR(500),
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     positive_reviews INT NOT NULL DEFAULT 0,
