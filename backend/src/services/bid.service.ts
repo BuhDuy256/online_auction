@@ -63,7 +63,7 @@ export const placeBid = async (
         return;
     }
 
-    if (placedMaxPrice > highestBidderMaxPrice + stepPrice) {
+    if (placedMaxPrice >= highestBidderMaxPrice + stepPrice) {
         const newCurrentPrice = highestBidderMaxPrice + stepPrice;
         await bidRepository.updateCurrentPrice(productId, bidderId, newCurrentPrice);
         await bidRepository.createOrUpdateAutoBid(productId, bidderId, placedMaxPrice);
