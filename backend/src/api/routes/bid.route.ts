@@ -14,4 +14,8 @@ router.post("",
     bidController.placeBid
 );
 
+router.get("/history",
+    bidController.getBidHistoryById
+);
+
 export default router;

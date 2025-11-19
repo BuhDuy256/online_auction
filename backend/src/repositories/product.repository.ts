@@ -507,3 +507,22 @@ export const updateHighestBidderId = async (productId: number, newHighestBidderI
         data: { highest_bidder_id: newHighestBidderId }
     });
 };
+
+export const appendProductDescription = async (productId: number, sellerId: number, content: string): Promise<void> => {
+    const latestDescription = await prisma.product_descriptions.findFirst({
+        where: { product_id: productId },
+        orderBy: { version: 'desc' },
+        select: { version: true }
+    });
+
+    const newVersion = (latestDescription?.version ?? 0) + 1;
+
+    await prisma.product_descriptions.create({
+        data: {
+            product_id: productId,
+            author_id: sellerId,
+            content: content,
+            version: newVersion
+        }
+    });
+};

@@ -66,13 +66,41 @@ export const getProductCommentsById = async (
             Number(request.params.id),
             request.query
         );
-        response .status(200).json({
+        response.status(200).json({
             success: true,
             data: result.data,
             pagination: result.pagination,
         });
     } catch (error) {
         console.error('[getProductCommentsById] Error:', error);
+        next(error);
+    }
+};
+
+export const appendProductDescription = async (
+    request: Request,
+    response: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const productId = Number(request.params.id);
+        if (!productId || isNaN(productId)) {
+            response.status(400).json({
+                success: false,
+                error: 'Invalid product ID'
+            });
+            return;
+        }
+
+        const { seller_id, content } = request.body;
+        await productService.appendProductDescription(productId, seller_id, content);
+
+        response.status(200).json({
+            success: true,
+            message: 'Product description appended successfully'
+        });
+    } catch (error) {
+        console.error('[appendProductDescription] Error:', error);
         next(error);
     }
 };

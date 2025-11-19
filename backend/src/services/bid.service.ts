@@ -90,3 +90,7 @@ export const placeBid = async (
     return;
 };
 
+export const getBidHistory = async (productId: number, page: number, limit: number) => {
+    const history = await bidRepository.findBidHistoryByProductId(productId, page, limit);
+    return history;
+};

@@ -24,4 +24,8 @@ router.get("/:id/comments",
     productController.getProductCommentsById
 );
 
+router.post("/:id/description",
+    productController.appendProductDescription
+);
+
 export default router;

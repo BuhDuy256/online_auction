@@ -55,7 +55,13 @@ export const getProductCommentsSchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
+export const appendProductDescriptionSchema = z.object({
+    seller_id: z.number().int().positive(),
+    content: z.string().min(1),
+});
+
 export type ProductSearchQuery = z.infer<typeof searchProductSchema>;
 export type SortOption = z.infer<typeof sortOptionSchema>;
 export type CreateProduct = z.infer<typeof createProductSchema>;
 export type GetProductCommentsQuery = z.infer<typeof getProductCommentsSchema>;
+export type AppendProductDescription = z.infer<typeof appendProductDescriptionSchema>;

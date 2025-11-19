@@ -126,3 +126,62 @@ export const createOrUpdateAutoBid = async (productId: number, bidderId: number,
         }
     });
 };
+
+export interface BidHistoryItem {
+    created_at: Date;
+    bidder_name: string;
+    amount: number;
+}
+
+export interface PaginatedBidHistory {
+    data: BidHistoryItem[];
+    pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+    };
+}
+
+export const findBidHistoryByProductId = async (productId: number, page: number, limit: number): Promise<PaginatedBidHistory> => {
+    const offset = (page - 1) * limit;
+
+    const [bids, total] = await prisma.$transaction([
+        prisma.bids.findMany({
+            where: { product_id: productId },
+            select: {
+                created_at: true,
+                amount: true,
+                users: {
+                    select: {
+                        full_name: true
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc'
+            },
+            skip: offset,
+            take: limit
+        }),
+        prisma.bids.count({
+            where: { product_id: productId }
+        })
+    ]);
+
+    const data = bids.map(bid => ({
+        created_at: bid.created_at,
+        bidder_name: bid.users.full_name.replace(/^(.{4}).*$/, '****$1'),
+        amount: toNum(bid.amount)
+    }));
+
+    return {
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit)
+        }
+    };
+};

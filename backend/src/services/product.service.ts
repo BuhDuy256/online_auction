@@ -56,3 +56,7 @@ export const getProductCommentsById = async (productId: number, query: any) => {
     const comments = await productRepository.findCommentsById(productId, page, limit);
     return comments;
 };
+
+export const appendProductDescription = async (productId: number, sellerId: number, content: string) => {
+    await productRepository.appendProductDescription(productId, sellerId, content);
+};
