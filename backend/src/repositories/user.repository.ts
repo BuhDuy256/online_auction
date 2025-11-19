@@ -41,7 +41,7 @@ export const findByEmail = async (email: string) => {
 export const verifyUser = async (userId: number) => {
   const user = await prisma.users.update({
     where: { id: userId },
-    data: { is_verified: true },
+    data: { is_verified: true, status: "active" },
   });
   return mapUserToResponse(user);
 };

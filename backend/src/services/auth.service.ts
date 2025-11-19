@@ -29,7 +29,7 @@ import { OTP_EXPIRY_MINUTES } from "../utils/constant.util";
 export const signupUser = async (
   userData: SignupData
 ): Promise<SignupResponse> => {
-  const { recaptchaToken, fullName, email, password, address } = userData;
+  const { /* recaptchaToken, */ fullName, email, password, address } = userData;
 
   const existingUser = await userRepo.findByEmail(email);
   if (existingUser) {
