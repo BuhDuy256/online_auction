@@ -1,72 +1,9 @@
-// product.repository.ts
 import prisma from "../database/prisma"
 import { toSlug } from "../utils/slug.util";
 import { getCategoryIds } from "./category.repository";
 import { SortOption } from "../api/schemas/product.schema";
 import { toNum } from "../utils/number.util";
-
-export interface PaginatedResult<T> {
-    data: T[];
-    pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        totalPages: number;
-    };
-}
-
-export interface ProductDetail {
-    thumbnail: string;
-    name: string;
-    start_price: number;
-    step_price: number;
-    buy_now_price?: number;
-    current_price: number;
-    created_at: Date;
-    end_time: Date;
-    bid_count: number;
-    auto_extend: boolean;
-    status: string;
-    images: string[];
-    seller: {
-        id: number;
-        full_name: string;
-        positive_reviews: number;
-        negative_reviews: number;
-    };
-    description: string;
-    category: {
-        id: number;
-        name: string;
-        slug: string;
-        parent?: {
-            id: number;
-            name: string;
-            slug: string;
-        };
-    };
-}
-
-export interface ProductComment {
-    comment_id: number;
-    content: string;
-    user: {
-        user_id: number;
-        full_name: string;
-    };
-    created_at: Date;
-    updated_at: Date | null;
-    replies: {
-        comment_id: number;
-        content: string;
-        user: {
-            user_id: number;
-            full_name: string;
-        };
-        created_at: Date;
-        updated_at: Date | null;
-    }[];
-}
+import { PaginatedResult, ProductDetail, ProductComment, ProductBidInfo } from "../types/product.types";
 
 function escapeQuery(q: string) {
     return q
@@ -525,4 +462,27 @@ export const appendProductDescription = async (productId: number, sellerId: numb
             version: newVersion
         }
     });
+};
+
+export const getProductBidInfo = async (productId: number): Promise<ProductBidInfo> => {
+    const product = await prisma.products.findUnique({
+        where: { product_id: productId },
+        select: {
+            step_price: true,
+            start_price: true,
+            current_price: true,
+            highest_bidder_id: true
+        }
+    });
+
+    if (!product) {
+        throw new Error('Product not found');
+    }
+
+    return {
+        step_price: toNum(product.step_price),
+        start_price: toNum(product.start_price),
+        current_price: toNum(product.current_price),
+        highest_bidder_id: product.highest_bidder_id
+    };
 };

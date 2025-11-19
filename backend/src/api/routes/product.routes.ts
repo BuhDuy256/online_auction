@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validate } from "../../middlewares/validate.middleware";
-import { searchProductSchema, createProductSchema, getProductCommentsSchema } from "../schemas/product.schema";
+import { searchProductSchema, createProductSchema, getProductCommentsSchema, appendProductDescriptionSchema } from "../schemas/product.schema";
 import * as productController from "../controllers/product.controller";
 
 const router = Router();
@@ -25,6 +25,7 @@ router.get("/:id/comments",
 );
 
 router.post("/:id/description",
+    validate(appendProductDescriptionSchema, 'body'),
     productController.appendProductDescription
 );
 

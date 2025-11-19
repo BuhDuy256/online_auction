@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as bidController from "../controllers/bid.controller";
 import { validate } from '../../middlewares/validate.middleware';
-import { placeBidSchema } from '../schemas/bid.schema';
+import { placeBidSchema, getBidHistorySchema } from '../schemas/bid.schema';
 
 const router = Router({ mergeParams: true });
 
@@ -15,6 +15,7 @@ router.post("",
 );
 
 router.get("/history",
+    validate(getBidHistorySchema, 'query'),
     bidController.getBidHistoryById
 );
 

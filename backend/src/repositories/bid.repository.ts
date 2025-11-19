@@ -1,15 +1,7 @@
 import prisma from '../database/prisma';
 import { toNum } from '../utils/number.util';
-
-export interface HighestBidder {
-    current_price: number;
-    highest_bidder: {
-        id: number;
-        full_name: string;
-        positive_reviews: number;
-        negative_reviews: number;
-    }
-}
+import { HighestBidder, BidHistoryItem } from '../types/bid.types';
+import { PaginatedResult } from '../types/product.types';
 
 export const findHighestBidById = async (productId: number): Promise<HighestBidder | null> => {
     const currentBid = await prisma.products.findUnique({
@@ -127,23 +119,7 @@ export const createOrUpdateAutoBid = async (productId: number, bidderId: number,
     });
 };
 
-export interface BidHistoryItem {
-    created_at: Date;
-    bidder_name: string;
-    amount: number;
-}
-
-export interface PaginatedBidHistory {
-    data: BidHistoryItem[];
-    pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        totalPages: number;
-    };
-}
-
-export const findBidHistoryByProductId = async (productId: number, page: number, limit: number): Promise<PaginatedBidHistory> => {
+export const findBidHistoryByProductId = async (productId: number, page: number, limit: number): Promise<PaginatedResult<BidHistoryItem>> => {
     const offset = (page - 1) * limit;
 
     const [bids, total] = await prisma.$transaction([
@@ -171,7 +147,7 @@ export const findBidHistoryByProductId = async (productId: number, page: number,
 
     const data = bids.map(bid => ({
         created_at: bid.created_at,
-        bidder_name: bid.users.full_name.replace(/^(.{4}).*$/, '****$1'),
+        bidder_name: bid.users.full_name,
         amount: toNum(bid.amount)
     }));
 

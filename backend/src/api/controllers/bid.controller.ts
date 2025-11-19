@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import * as bidService from '../../services/bid.service';
 import { placeBidSchema, getBidHistorySchema } from '../schemas/bid.schema';
+import { logger } from '../../utils/logger.util';
+import { formatResponse, formatPaginatedResponse } from '../../utils/response.util';
 
 export const getHighestBidById = async (
     request: Request,
@@ -17,12 +19,9 @@ export const getHighestBidById = async (
             return;
         }
         const result = await bidService.getHighestBidById(productId);
-        response.status(200).json({
-            success: true,
-            data: result
-        });
+        formatResponse(response, 200, result);
     } catch (error) {
-        console.error('[getHighestBidById] Error:', error);
+        logger.error('BidController', 'Failed to get highest bid', error);
         next(error);
     }
 };
@@ -36,13 +35,10 @@ export const placeBid = async (
         const { product_id, bidder_id, max_amount } = placeBidSchema.parse(request.body);
         await bidService.placeBid(product_id, bidder_id, max_amount);
         
-        response.status(200).json({
-            success: true,
-            message: 'Bid placed successfully'
-        });
+        formatResponse(response, 200, { message: 'Bid placed successfully' });
     }
     catch (error) {
-        console.error('[placeBid] Error:', error);
+        logger.error('BidController', 'Failed to place bid', error);
         next(error);
     }
 };
@@ -65,13 +61,9 @@ export const getBidHistoryById = async (
         const { page, limit } = getBidHistorySchema.parse(request.query);
         const result = await bidService.getBidHistory(productId, page, limit);
 
-        response.status(200).json({
-            success: true,
-            data: result.data,
-            pagination: result.pagination
-        });
+        formatPaginatedResponse(response, 200, result.data, result.pagination);
     } catch (error) {
-        console.error('[getBidHistoryById] Error:', error);
+        logger.error('BidController', 'Failed to get bid history', error);
         next(error);
     }
 };

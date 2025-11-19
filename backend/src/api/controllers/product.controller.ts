@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import * as productService from '../../services/product.service';
+import { searchProductSchema, getProductCommentsSchema, appendProductDescriptionSchema } from '../schemas/product.schema';
+import { logger } from '../../utils/logger.util';
+import { formatResponse, formatPaginatedResponse } from '../../utils/response.util';
 
 export const searchProducts = async (
     request: Request,
@@ -7,15 +10,12 @@ export const searchProducts = async (
     next: NextFunction
 ) => {
     try {
-        const result = await productService.searchProducts(request.query);
+        const { q, category, page, limit, sort, exclude } = searchProductSchema.parse(request.query);
+        const result = await productService.searchProducts(q, category, page, limit, sort, exclude);
         
-        response.status(200).json({
-            success: true,
-            data: result.data,
-            pagination: result.pagination,
-        });
+        formatPaginatedResponse(response, 200, result.data, result.pagination);
     } catch (error) {
-        console.error('[searchProducts] Error:', error);
+        logger.error('ProductController', 'Failed to search products', error);
         next(error);
     }
 };
@@ -28,12 +28,9 @@ export const createProduct = async (
     try {
         const result = await productService.createProduct(request.body);
         
-        response.status(201).json({
-            success: true,
-            data: result
-        });
+        formatResponse(response, 201, result);
     } catch (error) {
-        console.error('[createProduct] Error:', error);
+        logger.error('ProductController', 'Failed to create product', error);
         next(error);
     }
 };
@@ -46,12 +43,9 @@ export const getProductDetailById = async (
     try {
         const result = await productService.getProductDetailById(Number(request.params.id));
         
-        response .status(200).json({
-            success: true,
-            data: result
-        });
+        formatResponse(response, 200, result);
     } catch (error) {
-        console.error('[getProductById] Error:', error);
+        logger.error('ProductController', 'Failed to get product detail', error);
         next(error);
     }
 }
@@ -62,17 +56,13 @@ export const getProductCommentsById = async (
     next: NextFunction
 ) => {
     try {
-        const result = await productService.getProductCommentsById(
-            Number(request.params.id),
-            request.query
-        );
-        response.status(200).json({
-            success: true,
-            data: result.data,
-            pagination: result.pagination,
-        });
+        const productId = Number(request.params.id);
+        const { page, limit } = getProductCommentsSchema.parse(request.query);
+        const result = await productService.getProductCommentsById(productId, page, limit);
+        
+        formatPaginatedResponse(response, 200, result.data, result.pagination);
     } catch (error) {
-        console.error('[getProductCommentsById] Error:', error);
+        logger.error('ProductController', 'Failed to get product comments', error);
         next(error);
     }
 };
@@ -92,15 +82,12 @@ export const appendProductDescription = async (
             return;
         }
 
-        const { seller_id, content } = request.body;
+        const { seller_id, content } = appendProductDescriptionSchema.parse(request.body);
         await productService.appendProductDescription(productId, seller_id, content);
 
-        response.status(200).json({
-            success: true,
-            message: 'Product description appended successfully'
-        });
+        formatResponse(response, 200, { message: 'Product description appended successfully' });
     } catch (error) {
-        console.error('[appendProductDescription] Error:', error);
+        logger.error('ProductController', 'Failed to append product description', error);
         next(error);
     }
 };

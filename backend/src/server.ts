@@ -27,7 +27,7 @@ app.use("/products", productRouter);
 app.use("/forms", formRouter);
 app.use("/products/:id/bid", BidRouter);
 
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send('Online Auction API is running');
 });
 

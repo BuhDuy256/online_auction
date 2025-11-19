@@ -1,12 +1,16 @@
 import * as productRepository from '../repositories/product.repository';
-import { searchProductSchema, getProductCommentsSchema } from '../api/schemas/product.schema';
+import { SortOption } from '../api/schemas/product.schema';
 
-export const searchProducts = async (query: any) => {
-    const { q, category, page, limit, sort, exclude } = searchProductSchema.parse(query);
-
+export const searchProducts = async (
+    q: string | undefined,
+    category: string | undefined,
+    page: number,
+    limit: number,
+    sort?: SortOption,
+    exclude?: number
+) => {
     if (category) {
-        const result = await productRepository.findByCategory(category, page, limit, sort, exclude);
-        return result;
+        return await productRepository.findByCategory(category, page, limit, sort, exclude);
     }
 
     return await productRepository.fullTextSearch(q, page, limit, sort, exclude);
@@ -51,10 +55,8 @@ export const getProductDetailById = async (productId: number) => {
     return product;
 };
 
-export const getProductCommentsById = async (productId: number, query: any) => {
-    const { page, limit } = getProductCommentsSchema.parse(query);
-    const comments = await productRepository.findCommentsById(productId, page, limit);
-    return comments;
+export const getProductCommentsById = async (productId: number, page: number, limit: number) => {
+    return await productRepository.findCommentsById(productId, page, limit);
 };
 
 export const appendProductDescription = async (productId: number, sellerId: number, content: string) => {
