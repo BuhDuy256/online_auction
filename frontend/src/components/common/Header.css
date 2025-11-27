@@ -1,10 +1,10 @@
 .header {
   width: 100%;
-  background-color: #ffffff;
-  border-bottom: 1px solid #dbdbdb;
   padding: 12px 24px;
   box-sizing: border-box;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid #333;
+  background: rgba(11, 12, 16, 0.9);
 }
 
 .header-content {

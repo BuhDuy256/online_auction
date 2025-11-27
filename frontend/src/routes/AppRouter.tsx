@@ -16,6 +16,7 @@ import LoginPage from "../pages/Auth/LoginPage";
 import VerifyOTPPage from "../pages/Auth/VerifyOTPPage"; // Add this
 import HomePage from "../pages/HomePage";
 import ForgotPasswordPage from "../pages/Auth/ForgotPasswordPage";
+import UIKitPage from "../pages/Dev/UIKitPage";
 
 const AppRouter = () => {
   return (
@@ -27,6 +28,11 @@ const AppRouter = () => {
       <Route path="/auction/:id" element={<UnderDevelopmentPage />} />
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
       <Route path="*" element={<NotFoundPage />} />
+
+      {/* ============================================== */}
+      {/* TUYẾN ĐƯỜNG CÔNG KHAI (DEV) */}
+      {/* ============================================== */}
+      <Route path="/dev/ui-kit" element={<UIKitPage />} />
 
       {/* ============================================== */}
       {/* TUYẾN ĐƯỜNG CÔNG KHAI (CHỈ CHO KHÁCH) */}

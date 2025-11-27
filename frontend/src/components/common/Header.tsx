@@ -57,7 +57,8 @@ const Header: React.FC = () => {
             // === 7. CHƯA ĐĂNG NHẬP (GUEST) ===
             <div className="guest-menu">
               <Button
-                variant="primary"
+                variant="default"
+                size="md"
                 className="header-button"
                 onClick={() => navigate("/login")}
               >
@@ -65,6 +66,7 @@ const Header: React.FC = () => {
               </Button>
               <Button
                 variant="secondary"
+                size="md"
                 className="header-button"
                 onClick={() => navigate("/signup")}
               >

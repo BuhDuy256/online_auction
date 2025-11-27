@@ -137,26 +137,29 @@ export default function LoginPage() {
         />
 
         <div className="recaptcha-container">
-          <ReCAPTCHA ref={recaptchaRef} sitekey={RECAPTCHA_SITE_KEY} />
+          <ReCAPTCHA
+            theme="dark"
+            ref={recaptchaRef}
+            sitekey={RECAPTCHA_SITE_KEY}
+          />
         </div>
 
         {error && <p className="auth-error">{error}</p>}
 
         <div className="button-group">
-          <Button type="submit" variant="primary" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <span className="spinner"></span>
-                Logging in...
-              </>
-            ) : (
-              "Log in"
-            )}
+          <Button
+            type="submit"
+            variant="default"
+            isLoading={isLoading}
+            size="lg"
+          >
+            {isLoading ? "Logging in..." : "Log in"}
           </Button>
         </div>
       </form>
       <Button
         variant="secondary"
+        size="lg"
         onClick={() => navigate("/signup")}
         disabled={isLoading}
         className="switch-auth-button"

@@ -1,32 +1,52 @@
 :root {
-  font-family: var(
-    --font-display,
-    system-ui,
-    Avenir,
-    Helvetica,
-    Arial,
-    sans-serif
-  );
+  /* 1. Backgrounds */
+  --bg-primary: #0b0c10;
+  --bg-secondary: #15161b;
+  --bg-tertiary: #1f2026;
+
+  /* 2. Typography */
+  --font-display: "Open Sans", sans-serif;
+  --text-main: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-inverse: #0b0c10;
+
+  /* 3. Actions */
+  --accent-color: #ff9900;
+  --accent-hover: #e68a00;
+  --accent-glow: rgba(255, 153, 0, 0.15);
+  --accent-ring: rgba(255, 153, 0, 0.5);
+
+  /* 4. Borders & Lines */
+  --border-color: #333333;
+  --radius: 8px;
+
+  /* 5. Status */
+  --status-success: #00c950;
+  --status-error: #ef4444;
+  --status-warning: #ff9900;
+  --status-info: #3b82f6;
+
+  /* --- Base Settings --- */
+  font-family: var(--font-display);
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: var(--text-main, rgba(255, 255, 255, 0.87));
-  background-color: var(--bg-primary, #242424);
+  /* Chuyển hẳn sang Dark scheme để thanh cuộn trình duyệt chuyển sang màu tối */
+  color-scheme: dark;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  text-align: center;
 }
 
-a {
-  font-weight: 500;
-  color: var(--accent-color, #646cff);
-  text-decoration: inherit;
-}
-a:hover {
-  color: var(--accent-hover, #535bf2);
+/* Reset cơ bản */
+*,
+*::before,
+*::after {
+  box-sizing: border-box; /* Quan trọng để layout không bị vỡ kích thước */
 }
 
 body {
@@ -34,31 +54,31 @@ body {
   min-height: 100vh;
   background-color: var(--bg-primary);
   color: var(--text-main);
+  overflow-x: hidden;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+a {
+  font-weight: 500;
+  color: var(--accent-color);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   color: var(--text-main);
+  margin-top: 0;
 }
 
 button {
-  border-radius: var(--radius, 8px);
-  border: 1px solid var(--border-color, transparent);
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
   font-family: inherit;
-  background-color: var(--bg-secondary, #1a1a1a);
-  color: var(--text-main);
-  cursor: pointer;
-  transition: border-color 0.25s, background-color 0.25s, color 0.25s;
-}
-button:hover {
-  border-color: var(--accent-color, #646cff);
-  background-color: var(--bg-primary);
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
 }

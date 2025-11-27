@@ -1,63 +1,30 @@
 #root {
-  max-width: 1280px;
+  width: 100%;
+  min-height: 100vh;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
 }
 
 .main-content-container {
-  max-width: 2180px; /* Or whatever width you prefer */
-  margin: 0 auto; /* This centers it */
-  /* padding: 24px; */
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 1rem;
 }
 
-body {
-  margin: 0;
-  font-family: var(
-    --font-display,
-    system-ui,
-    Avenir,
-    Helvetica,
-    Arial,
-    sans-serif
-  );
-  color: var(--text-main);
-  background-color: var(--bg-primary);
-  min-height: 100vh;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+@media (min-width: 768px) {
+  .main-content-container {
+    padding: 0 2rem;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+.text-accent {
+  color: var(--accent-color);
 }

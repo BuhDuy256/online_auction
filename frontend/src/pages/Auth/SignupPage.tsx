@@ -131,21 +131,23 @@ export default function SignupPage() {
         />
 
         <div className="recaptcha-container">
-          <ReCAPTCHA ref={recaptchaRef} sitekey={RECAPTCHA_SITE_KEY} />
+          <ReCAPTCHA
+            theme="dark"
+            ref={recaptchaRef}
+            sitekey={RECAPTCHA_SITE_KEY}
+          />
         </div>
 
         {error && <p className="auth-error">{error}</p>}
 
         <div className="button-group">
-          <Button type="submit" variant="primary" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <span className="spinner"></span>
-                Signing up...
-              </>
-            ) : (
-              "Sign Up"
-            )}
+          <Button
+            type="submit"
+            variant="default"
+            size="lg"
+            isLoading={isLoading}
+          >
+            {isLoading ? "Signing up..." : "Sign Up"}
           </Button>
         </div>
       </form>
@@ -153,7 +155,7 @@ export default function SignupPage() {
       <Button
         variant="secondary"
         onClick={() => navigate("/login")}
-        disabled={isLoading}
+        size="lg"
         className="switch-auth-button"
       >
         Already have an account? Log In
