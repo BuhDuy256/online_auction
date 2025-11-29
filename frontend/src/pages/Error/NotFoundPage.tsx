@@ -1,4 +1,4 @@
-import StatusPageLayout from "../layouts/StatusPageLayout";
+import StatusPageLayout from "../../layouts/StatusPageLayout";
 
 export default function NotFoundPage() {
   return (

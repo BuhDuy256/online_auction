@@ -8,13 +8,13 @@ import PublicOnlyRoute from "./PublicOnlyRoute";
 import { ROLES } from "../constants/roles";
 
 // 3. Import các trang
-import UnderDevelopmentPage from "../pages/UnderDevelopmentPage";
-import UnauthorizedPage from "../pages/UnauthorizedPage";
-import NotFoundPage from "../pages/NotFoundPage";
+import UnderDevelopmentPage from "../pages/Error/UnderDevelopmentPage";
+import UnauthorizedPage from "../pages/Error/Forbidden";
+import NotFoundPage from "../pages/Error/NotFoundPage";
 import SignupPage from "../pages/Auth/SignupPage";
 import LoginPage from "../pages/Auth/LoginPage";
 import VerifyOTPPage from "../pages/Auth/VerifyOTPPage"; // Add this
-import HomePage from "../pages/Auction/HomePage";
+import HomePage from "../pages/Home/HomePage";
 import ForgotPasswordPage from "../pages/Auth/ForgotPasswordPage";
 import UIKitPage from "../pages/Dev/UIKitPage";
 
