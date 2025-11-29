@@ -78,9 +78,7 @@ const AppRouter = () => {
       </Route>
 
       <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]} />}>
-        <Route path="/admin/dashboard" element={<UnderDevelopmentPage />} />
-        <Route path="/admin/users" element={<UnderDevelopmentPage />} />
-        <Route path="/admin/categories" element={<UnderDevelopmentPage />} />
+        {/* <Route path="/admin/dashboard" element={<UnderDevelopmentPage />} /> */}
       </Route>
     </Routes>
   );
