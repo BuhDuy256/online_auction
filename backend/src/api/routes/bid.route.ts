@@ -6,17 +6,17 @@ import { placeBidSchema, getBidHistorySchema } from '../schemas/bid.schema';
 const router = Router({ mergeParams: true });
 
 router.get("",
-    bidController.getHighestBidById
+  bidController.getHighestBidById
 );
 
 router.post("",
-    validate(placeBidSchema, 'body'), 
-    bidController.placeBid
+  validate(placeBidSchema, 'body'),
+  bidController.placeBid
 );
 
 router.get("/history",
-    validate(getBidHistorySchema, 'query'),
-    bidController.getBidHistoryById
+  validate(getBidHistorySchema, 'query'),
+  bidController.getBidHistoryById
 );
 
 export default router;

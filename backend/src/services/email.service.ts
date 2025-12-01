@@ -2,25 +2,25 @@ import nodemailer from "nodemailer";
 import { envConfig } from "../config/env.config";
 
 const transporter = nodemailer.createTransport({
-    host: envConfig.EMAIL_HOST,
-    port: envConfig.EMAIL_PORT,
-    secure: false, // true for 465, false for other ports
-    auth: {
-        user: envConfig.EMAIL_USER,
-        pass: envConfig.EMAIL_PASSWORD,
-    },
+  host: envConfig.EMAIL_HOST,
+  port: envConfig.EMAIL_PORT,
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: envConfig.EMAIL_USER,
+    pass: envConfig.EMAIL_PASSWORD,
+  },
 });
 
 export const sendOTPEmail = async (
-    email: string,
-    otp: string,
-    userName: string
+  email: string,
+  otp: string,
+  userName: string
 ) => {
-    const mailOptions = {
-        from: envConfig.EMAIL_FROM,
-        to: email,
-        subject: "Email Verification - OTP Code",
-        html: `
+  const mailOptions = {
+    from: envConfig.EMAIL_FROM,
+    to: email,
+    subject: "Email Verification - OTP Code",
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -48,7 +48,7 @@ export const sendOTPEmail = async (
             </div>
             
             <p><strong>This code will expire in ${envConfig.OTP_EXPIRY_MINUTES
-            } minutes.</strong></p>
+      } minutes.</strong></p>
             
             <p>If you didn't request this code, please ignore this email.</p>
           </div>
@@ -59,23 +59,23 @@ export const sendOTPEmail = async (
       </body>
       </html>
     `,
-    };
+  };
 
-    try {
-        await transporter.sendMail(mailOptions);
-        console.log(`OTP email sent to ${email}`);
-    } catch (error) {
-        console.error("Error sending email:", error);
-        throw new Error("Failed to send verification email");
-    }
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`OTP email sent to ${email}`);
+  } catch (error) {
+    console.error("Error sending email:", error);
+    throw new Error("Failed to send verification email");
+  }
 };
 
 export const sendWelcomeEmail = async (email: string, userName: string) => {
-    const mailOptions = {
-        from: envConfig.EMAIL_FROM,
-        to: email,
-        subject: "Welcome to Our Platform!",
-        html: `
+  const mailOptions = {
+    from: envConfig.EMAIL_FROM,
+    to: email,
+    subject: "Welcome to Our Platform!",
+    html: `
       <!DOCTYPE html>
       <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
@@ -88,7 +88,7 @@ export const sendWelcomeEmail = async (email: string, userName: string) => {
       </body>
       </html>
     `,
-    };
+  };
 
-    await transporter.sendMail(mailOptions);
+  await transporter.sendMail(mailOptions);
 };

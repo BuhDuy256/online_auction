@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { envConfig } from "../config/env.config";
 
 export const generateOTP = (length: number = 6): string => {
   const digits = "0123456789";
@@ -13,7 +14,7 @@ export const generateOTP = (length: number = 6): string => {
 };
 
 export const isOTPExpired = (createdAt: Date): boolean => {
-  const expiryMinutes = parseInt(process.env.OTP_EXPIRY_MINUTES || "10");
+  const expiryMinutes = envConfig.OTP_EXPIRY_MINUTES || 10;
   const expiryTime = new Date(createdAt.getTime() + expiryMinutes * 60000);
   return new Date() > expiryTime;
 };

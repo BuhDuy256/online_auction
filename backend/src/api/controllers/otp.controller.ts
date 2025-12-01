@@ -3,6 +3,7 @@ import * as authService from "../../services/auth.service";
 import { formatResponse } from "../../utils/response.util";
 import { logger } from "../../utils/logger.util";
 import { AUTH_CONSTANTS } from "../../utils/constant.util";
+import { envConfig } from "../../config/env.config";
 
 export const verifyOTP = async (
   request: Request,
@@ -16,7 +17,7 @@ export const verifyOTP = async (
 
     response.cookie("refreshToken", result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: envConfig.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: AUTH_CONSTANTS.REFRESH_TOKEN_COOKIE_MAX_AGE,
     });

@@ -81,7 +81,7 @@ const AppRouter = () => {
       {/* Public Routes */}
       <Route path="/" element={<HomePage />} />
 
-      {/* Dev-Only Routes (Consider wrapping in a check for process.env.NODE_ENV === 'development') */}
+      {/* Dev-Only Routes (Consider wrapping in a check for envConfig.NODE_ENV === 'development') */}
       <Route path="/dev/ui-kit" element={<UIKitPage />} />
 
       {/* Protected Routes */}

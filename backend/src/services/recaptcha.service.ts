@@ -1,6 +1,7 @@
 import axios from "axios";
+import { envConfig } from "../config/env.config";
 
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
+const RECAPTCHA_SECRET_KEY = envConfig.RECAPTCHA_SECRET_KEY;
 const RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
 
 interface RecaptchaV2Response {

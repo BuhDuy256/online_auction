@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyRecaptchaV2 } from "../services/recaptcha.service";
+import { envConfig } from "../config/env.config";
 
 export const validateRecaptchaV2 = async (
   req: Request,
@@ -8,7 +9,7 @@ export const validateRecaptchaV2 = async (
 ) => {
   try {
     // Bypass in development if no token provided
-    if (process.env.NODE_ENV === "development" && !req.body.recaptchaToken) {
+    if (envConfig.NODE_ENV === "development" && !req.body.recaptchaToken) {
       console.warn("⚠️  reCAPTCHA bypassed in development mode");
       return next();
     }
