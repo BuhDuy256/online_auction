@@ -6,7 +6,7 @@ import {
   formatPaginatedResponse,
 } from "../../utils/response.util";
 import {
-  ProductSearchQuery,
+  ProductsSearchQuery,
   CreateProduct,
   GetProductCommentsQuery,
   AppendProductDescription,
@@ -18,7 +18,7 @@ export const searchProducts = async (
   next: NextFunction
 ) => {
   try {
-    const query = request.query as unknown as ProductSearchQuery;
+    const query = request.query as unknown as ProductsSearchQuery;
     const result = await productService.searchProducts(query);
 
     formatPaginatedResponse(response, 200, result.data, result.pagination);

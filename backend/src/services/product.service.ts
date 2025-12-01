@@ -1,36 +1,45 @@
 import * as productRepository from "../repositories/product.repository";
 import {
-  ProductSearchQuery,
+  ProductsSearchQuery,
   CreateProduct,
   GetProductCommentsQuery,
   AppendProductDescription,
 } from "../api/schemas/product.schema";
 import { toNum } from "../utils/number.util";
+import { PaginatedResult, ProductListCardProps } from "../types/product.types";
 
-const mapProductToResponse = (product: any) => {
-  if (!product) return null;
+const mapProductToResponse = (product: any): ProductListCardProps => {
+  if (!product) return null as any;
+
+  const now = Date.now();
+  const endTime = new Date(product.end_time).getTime();
+  const msLeft = endTime - now;
+
+  let timeLeft = "Ended";
+  if (msLeft > 0) {
+    const days = Math.floor(msLeft / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((msLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((msLeft % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (days > 0) {
+      timeLeft = `${days}d ${hours}h`;
+    } else if (hours > 0) {
+      timeLeft = `${hours}h ${minutes}m`;
+    } else {
+      timeLeft = `${minutes}m`;
+    }
+  }
+
   return {
-    productId: product.product_id,
-    thumbnailUrl: product.thumbnail_url,
-    name: product.name,
-    currentPrice: toNum(product.current_price),
-    status: product.status,
-    createdAt: product.created_at,
-    endTime: product.end_time,
-    bidCount: product.bid_count,
-    highestBidder: product.highest_bidder
-      ? {
-        id: product.highest_bidder.id,
-        fullName: product.highest_bidder.full_name,
-      }
-      : null,
-    category: product.category
-      ? {
-        categoryId: product.category.category_id,
-        name: product.category.name,
-        slug: product.category.slug,
-      }
-      : undefined,
+    id: product.product_id.toString(),
+    title: product.name,
+    image: product.thumbnail_url || "",
+    currentBid: toNum(product.current_price),
+    buyNowPrice: product.buy_now_price ? toNum(product.buy_now_price) : undefined,
+    topBidder: product.highest_bidder?.full_name || "No bids yet",
+    timeLeft: timeLeft,
+    isNewArrival: product.isNewArrival || false,
+    bidCount: product.bid_count || 0,
   };
 };
 
@@ -96,27 +105,19 @@ const mapCommentToResponse = (comment: any) => {
   };
 };
 
-export const searchProducts = async (query: ProductSearchQuery) => {
-  const { q, category, page, limit, sort, exclude } = query;
+export const searchProducts = async (query: ProductsSearchQuery): Promise<PaginatedResult<ProductListCardProps>> => {
+  const { q, categorySlug, page, limit, sort, excludeCategorySlug } = query;
 
-  let result;
-  if (category) {
-    result = await productRepository.findByCategory(
-      category,
-      page,
-      limit,
-      sort,
-      exclude
-    );
-  } else {
-    result = await productRepository.fullTextSearch(
-      q,
-      page,
-      limit,
-      sort,
-      exclude
-    );
-  }
+  const singleCategorySlug = categorySlug && categorySlug.length > 0 ? categorySlug[0] : undefined;
+
+  const result = await productRepository.searchProducts(
+    q,
+    singleCategorySlug,
+    page,
+    limit,
+    sort,
+    excludeCategorySlug
+  );
 
   return {
     data: result.data.map(mapProductToResponse),

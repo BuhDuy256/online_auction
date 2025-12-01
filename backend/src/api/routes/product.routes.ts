@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { validate } from "../../middlewares/validate.middleware";
-import { searchProductSchema, createProductSchema, getProductCommentsSchema, appendProductDescriptionSchema } from "../schemas/product.schema";
+import { searchProductsSchema, createProductSchema, getProductCommentsSchema, appendProductDescriptionSchema } from "../schemas/product.schema";
 import * as productController from "../controllers/product.controller";
 
 const router = Router();
 
 router.get("/",
-  validate(searchProductSchema, 'query'),
+  validate(searchProductsSchema, 'query'),
   productController.searchProducts
 );
 

@@ -67,3 +67,15 @@ export interface ProductBidInfo {
   currentPrice: number;
   highestBidderId: number | null;
 }
+
+export interface ProductListCardProps {
+  id: string;
+  title: string;
+  image: string;
+  currentBid: number;
+  buyNowPrice?: number;
+  topBidder: string;
+  timeLeft: string;
+  isNewArrival?: boolean;
+  bidCount: number;
+}

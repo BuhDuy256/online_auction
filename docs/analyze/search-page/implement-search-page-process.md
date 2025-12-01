@@ -283,133 +283,6 @@ const [priceRange, setPriceRange] = useState([0, 5000]);
 
 ## 2. SOLUTIONS FOR EACH ISSUE
 
-### **Solution #1: Implement 3-State Category Filter**
-
-#### **Frontend Changes: `CategoryFilter.tsx`**
-
-**Step 1: Add state calculation logic**
-
-```typescript
-interface CategoryState {
-  checked: boolean;
-  indeterminate: boolean;
-}
-
-function calculateCategoryState(
-  category: CategoryNode,
-  selectedCategories: string[]
-): CategoryState {
-  const hasChildren = category.children && category.children.length > 0;
-
-  if (!hasChildren) {
-    // Leaf node - simple checked state
-    return {
-      checked: selectedCategories.includes(category.id),
-      indeterminate: false,
-    };
-  }
-
-  // Parent node - calculate based on children
-  const checkedChildren = category.children!.filter((child) =>
-    selectedCategories.includes(child.id)
-  );
-
-  if (checkedChildren.length === 0) {
-    return { checked: false, indeterminate: false };
-  } else if (checkedChildren.length === category.children!.length) {
-    return { checked: true, indeterminate: false };
-  } else {
-    return { checked: false, indeterminate: true };
-  }
-}
-```
-
-**Step 2: Update CategoryTreeItem component**
-
-```typescript
-function CategoryTreeItem({
-  category,
-  selectedCategories,
-  onCategoryChange,
-  level = 0,
-}: CategoryTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(level === 0);
-  const hasChildren = category.children && category.children.length > 0;
-
-  // Calculate state
-  const state = calculateCategoryState(category, selectedCategories);
-
-  // Handle click based on node type
-  const handleToggle = (checked: boolean) => {
-    if (hasChildren) {
-      // Parent: Toggle all children
-      const childIds = category.children!.map((c) => c.id);
-      onCategoryChange(childIds, checked);
-    } else {
-      // Child: Toggle only this
-      onCategoryChange([category.id], checked);
-    }
-  };
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2 py-1.5 px-2">
-        <Checkbox
-          id={category.id}
-          checked={state.checked}
-          indeterminate={state.indeterminate} // Shadcn UI supports this
-          onCheckedChange={handleToggle}
-        />
-        <Label htmlFor={category.id}>{category.name}</Label>
-      </div>
-
-      {hasChildren && isExpanded && (
-        <div className="space-y-1">
-          {category.children!.map((child) => (
-            <CategoryTreeItem
-              key={child.id}
-              category={child}
-              selectedCategories={selectedCategories}
-              onCategoryChange={onCategoryChange}
-              level={level + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-```
-
-**Step 3: Update parent component handler**
-
-```typescript
-// ProductListPage.tsx
-const handleCategoryChange = (categoryIds: string[], checked: boolean) => {
-  if (checked) {
-    // Add all IDs
-    setSelectedCategories([
-      ...selectedCategories,
-      ...categoryIds.filter((id) => !selectedCategories.includes(id)),
-    ]);
-  } else {
-    // Remove all IDs
-    setSelectedCategories(
-      selectedCategories.filter((id) => !categoryIds.includes(id))
-    );
-  }
-};
-```
-
-**Testing:**
-
-- ✅ Click parent unchecked → All children checked
-- ✅ Click parent indeterminate → All children unchecked
-- ✅ Click child → Parent updates automatically
-- ✅ Mixed selection shows indeterminate state
-
----
-
 ### **Solution #2-3: Fix Backend API Schema**
 
 #### **Backend Changes: Remove Exclusive Constraint**
@@ -417,7 +290,7 @@ const handleCategoryChange = (categoryIds: string[], checked: boolean) => {
 **File: `product.schema.ts`**
 
 ```typescript
-export const searchProductSchema = z.object({
+export const ProductsSearchQuery = z.object({
   q: z.string().optional(), // Search keyword
   categoryIds: z.array(z.coerce.number().int().positive()).optional(), // Multi-category
   minPrice: z.coerce.number().positive().optional(),
@@ -672,7 +545,7 @@ GET /api/products/facets?q=iPhone
 **File: `product.service.ts`**
 
 ```typescript
-export const searchProducts = async (query: ProductSearchQuery) => {
+export const searchProducts = async (query: ProductsSearchQuery) => {
   const { q, categoryIds, minPrice, maxPrice, page, limit, sort, exclude } =
     query;
 

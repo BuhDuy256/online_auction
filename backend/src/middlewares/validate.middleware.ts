@@ -7,7 +7,12 @@ export const validate = (schema: z.ZodObject<any>, source: RequestSource = 'body
   try {
     const dataToValidate = req[source];
     const parsedData = schema.parse(dataToValidate);
-    req[source] = parsedData;
+    Object.defineProperty(req, source, {
+      value: parsedData,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
     return next();
   } catch (error) {
     if (error instanceof ZodError) {

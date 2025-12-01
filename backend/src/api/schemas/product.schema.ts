@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { allowedSortFields } from "../../utils/constant.util";
+import { stringOrArray } from "../../utils/schema.util";
 
 export const sortOptionSchema = z
   .string()
@@ -23,22 +24,14 @@ export const sortOptionSchema = z
   })
   .optional();
 
-export const searchProductSchema = z
+export const searchProductsSchema = z
   .object({
     q: z.string().optional(),
-    category: z.string().optional(),
+    categorySlug: stringOrArray,
     page: z.coerce.number().int().min(1).optional().default(1),
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
     sort: sortOptionSchema,
-    exclude: z.coerce.number().int().positive().optional(),
-  })
-  .refine((data) => data.q || data.category, {
-    message: "At least one of 'q' or 'category' must be provided",
-    path: ["q", "category"],
-  })
-  .refine((data) => !(data.q && data.category), {
-    message: "Cannot search by both 'q' and 'category' at the same time",
-    path: ["q", "category"],
+    excludeCategorySlug: stringOrArray,
   });
 
 export const createProductSchema = z.object({
@@ -65,7 +58,7 @@ export const appendProductDescriptionSchema = z.object({
   content: z.string().min(1),
 });
 
-export type ProductSearchQuery = z.infer<typeof searchProductSchema>;
+export type ProductsSearchQuery = z.infer<typeof searchProductsSchema>;
 export type SortOption = z.infer<typeof sortOptionSchema>;
 export type CreateProduct = z.infer<typeof createProductSchema>;
 export type GetProductCommentsQuery = z.infer<typeof getProductCommentsSchema>;
