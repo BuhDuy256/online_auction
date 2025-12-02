@@ -179,6 +179,7 @@ CREATE TABLE public.products (
   status USER-DEFINED NOT NULL DEFAULT 'active'::product_status_enum,
   fts tsvector,
   created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  slug text,
   CONSTRAINT products_pkey PRIMARY KEY (product_id),
   CONSTRAINT products_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(category_id),
   CONSTRAINT products_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES public.users(id),
