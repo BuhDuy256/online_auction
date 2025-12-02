@@ -1,5 +1,6 @@
 export interface Product {
   id: string;
+  slug?: string; // Product slug for SEO-friendly URLs
   title: string;
   image: string;
   currentBid: number;

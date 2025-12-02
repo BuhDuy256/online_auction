@@ -1,11 +1,14 @@
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ImageWithFallback } from "../ImageWithFallback";
 import { Clock, Sparkles, ShoppingCart } from "lucide-react";
+import { generateProductUrl } from "../../utils/urlHelpers";
 
 interface ProductListCardProps {
   id: string;
+  slug?: string; // Product slug for SEO-friendly URLs
   title: string;
   image: string;
   currentBid: number;
@@ -17,6 +20,8 @@ interface ProductListCardProps {
 }
 
 export function ProductListCard({
+  id,
+  slug,
   title,
   image,
   currentBid,
@@ -26,9 +31,30 @@ export function ProductListCard({
   isNewArrival = false,
   bidCount,
 }: ProductListCardProps) {
+  const navigate = useNavigate();
+
+  // Generate URL: require slug for SEO, fallback to /products if missing
+  const productUrl = slug ? generateProductUrl(slug, parseInt(id)) : `/products`;
+
+  const handleCardClick = () => {
+    navigate(productUrl);
+  };
+
+  const handlePlaceBid = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    navigate(productUrl); // Navigate to product detail for bidding
+  };
+
+  const handleBuyNow = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    // TODO: Implement buy now logic
+    console.log("Buy now clicked for product:", id);
+  };
+
   return (
     <Card
-      className={`group overflow-hidden bg-card hover:shadow-lg transition-all duration-300 ${
+      onClick={handleCardClick}
+      className={`group overflow-hidden bg-card hover:shadow-lg transition-all duration-300 cursor-pointer ${
         isNewArrival
           ? "border-accent shadow-accent/20 glow-accent"
           : "border-border hover:border-accent/50"
@@ -95,7 +121,7 @@ export function ProductListCard({
         </div>
 
         <div className="flex gap-2 pt-2">
-          <Button className="flex-1" size="sm">
+          <Button className="flex-1" size="sm" onClick={handlePlaceBid}>
             Place Bid
           </Button>
           {buyNowPrice && (
@@ -103,6 +129,7 @@ export function ProductListCard({
               variant="outline"
               size="sm"
               className="border-success/50 text-success hover:bg-success/10"
+              onClick={handleBuyNow}
             >
               <ShoppingCart className="h-3.5 w-3.5" />
             </Button>

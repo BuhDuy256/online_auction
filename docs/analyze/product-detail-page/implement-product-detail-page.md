@@ -1,3 +1,175 @@
+## Implementation Status
+
+### Backend ✅ COMPLETED
+
+**Files Created/Modified:**
+
+- ✅ `/backend/src/types/product-detail.types.ts` - Type definitions cho API responses
+- ✅ `/backend/src/types/product.types.ts` - Added `slug?: string` to ProductListCardProps
+- ✅ `/backend/src/repositories/product.repository.ts` - Added 8 repository methods:
+  - `getProductDetailById()` - Main product query với joins (categories, users, images)
+  - `getProductImages()` - Fetch product images
+  - `getProductDescription()` - Fetch latest description version
+  - `getCategoryWithParents()` - Recursive CTE query cho breadcrumb
+  - `getWatchlistCount()` - Count watchlist entries
+  - `isUserWatchlisted()` - Check user watchlist status
+  - `getUserBidStatus()` - Check user bid status (manual + auto_bids)
+  - `getProductBidHistory()` - Lazy load bid history với pagination
+  - `getProductQuestions()` - Lazy load Q&A với pagination
+  - `searchProducts()` - Updated to support `excludeProductIds` + return `products.slug` field
+- ✅ `/backend/src/services/product.service.ts` - Added 3 service methods:
+  - `getProductDetail(productId, userId?)` - Main service aggregating all data
+  - `getProductBidHistory(productId, page, limit)` - Bid history service
+  - `getProductQuestions(productId, page, limit)` - Q&A service
+  - `mapProductToResponse()` - Updated to include `slug` field in search results
+  - Helper: `maskBidderName()` - Mask bidder names (last 4-5 chars + "\*\*\*\*")
+  - Helper: `calculateSellerRating()` - Calculate average, total, positive %
+- ✅ `/backend/src/api/controllers/product.controller.ts` - Added 3 controller methods:
+  - `getProductDetail()` - GET /products/:id?userId=X
+  - `getProductBidHistory()` - GET /products/:id/bids?page=1&limit=20
+  - `getProductQuestions()` - GET /products/:id/questions?page=1&limit=10
+- ✅ `/backend/src/api/routes/product.routes.ts` - Updated routes:
+  - GET /products/:id → getProductDetail (replaced old implementation)
+  - GET /products/:id/bids → getProductBidHistory (new lazy load)
+  - GET /products/:id/questions → getProductQuestions (new lazy load)
+
+**API Endpoints Available:**
+
+```
+GET /products?q&categorySlug              → Search with slug field in response
+GET /products/:id?userId=X                → ProductDetailResponse (primary data)
+GET /products/:id/bids?page&limit         → BidHistoryResponse (lazy load)
+GET /products/:id/questions?page&limit    → QuestionsResponse (lazy load)
+GET /products?q&categorySlug&excludeProductIds → Search (related products)
+```
+
+**Important API Response Format:**
+
+Backend wraps responses using `formatResponse()` and `formatPaginatedResponse()`:
+
+```typescript
+// Single resource response:
+{
+  success: true,
+  data: ProductDetailResponse
+}
+
+// Paginated response:
+{
+  success: true,
+  data: T[],
+  pagination: { page, limit, total, totalPages }
+}
+```
+
+Frontend services **MUST unwrap** the `data` field from API responses.
+
+### Frontend ✅ COMPLETED
+
+**Files Created/Modified:**
+
+- ✅ `/frontend/src/types/product-detail.ts` - Type definitions matching backend API
+  - ProductDetailResponse, BidHistoryResponse, QuestionsResponse
+  - 8 nested interfaces for complete type safety
+- ✅ `/frontend/src/types/product.ts` - Added `slug?: string` to Product interface
+- ✅ `/frontend/src/utils/urlHelpers.ts` - Helper functions:
+  - `parseProductSlugId()` - Parse "slug-id" pattern from URL
+  - `generateProductUrl()` - Generate SEO-friendly URLs
+  - `calculateTimeLeft()` - Calculate remaining time from endTime
+  - `formatCurrency()` - Format currency display
+- ✅ `/frontend/src/contexts/AuthContext.tsx` - Fixed 401 Unauthorized bug:
+  - Check token existence before calling `getMe()` API
+  - Skip API call if no token (guest users)
+  - Clear invalid tokens properly
+- ✅ `/frontend/src/services/productService.ts` - Added 3 API methods:
+  - `getProductDetail(productId, userId?)` - Fetch primary data, unwrap `response.data`
+  - `getProductBidHistory(productId, page, limit)` - Lazy load bids, unwrap paginated response
+  - `getProductQuestions(productId, page, limit)` - Lazy load Q&A, unwrap paginated response
+  - **Critical:** All methods unwrap `{ success, data, pagination }` format from backend
+- ✅ `/frontend/src/pages/Product/ProductDetailPage.tsx` - Complete rewrite:
+  - Parse slug-id from URL params with `useParams`
+  - Fetch data from API with loading/error states
+  - Lazy load bid history when tab clicked
+  - Lazy load Q&A when tab clicked
+  - Dynamic breadcrumb from API response
+  - Display seller rating with stars
+  - Show user status alerts (outbid, watchlisted)
+  - Related products from API
+- ✅ `/frontend/src/components/auction/ProductListCard.tsx` - Updated:
+  - Added `slug` prop support
+  - Click handler navigates to slug-id URL
+  - Place Bid button navigates to product detail
+- ✅ `/frontend/src/routes/AppRouter.tsx` - Route already supports pattern
+  - `/products/:id` handles both numeric ID and slug-id pattern
+
+**Features Implemented:**
+
+- ✅ SEO-friendly URLs: `/products/vintage-leica-m6-123` (slug-id format enforced)
+- ❌ Backward compatible: `/products/123` **REJECTED** by parseProductSlugId (SEO requirement)
+- ✅ Lazy loading: Bid history & Q&A tabs load on demand
+- ✅ Dynamic breadcrumb with category hierarchy
+- ✅ User status: watchlisted, outbid, top bidder alerts
+- ✅ Related products from same category (excludes current product)
+- ✅ Seller rating calculation with visual stars
+- ✅ Masked bidder names from backend
+- ✅ Click entire ProductListCard navigates to product detail
+- ✅ Database: products.slug populated via auto_generate_slug() trigger
+
+---
+
+## Bug Fixes Applied
+
+### 1. 401 Unauthorized Error (AuthContext)
+
+**Problem:** `AuthContext.useEffect()` called `getMe()` API even when no token exists, causing 401 errors for guest users.
+
+**Solution:**
+
+- Check `localStorage.getItem("token")` before API call
+- If no token: Skip API call, set `isLoading = false` immediately
+- If invalid token: Clear token from localStorage, set `user = null`
+
+**Files Modified:** `/frontend/src/contexts/AuthContext.tsx`
+
+### 2. TypeError: Cannot read properties of undefined (reading 'endTime')
+
+**Problem:** Frontend destructured `auction` from `productData` but received wrapped response `{ success: true, data: {...} }` instead of direct data.
+
+**Root Cause:** Backend uses `formatResponse()` utility that wraps all responses in `{ success, data }` format, but frontend services didn't unwrap the response.
+
+**Solution:**
+
+- Updated `getProductDetail()` → `return response.data`
+- Updated `getProductBidHistory()` → `return { bids: response.data, pagination: response.pagination }`
+- Updated `getProductQuestions()` → `return { questions: response.data, pagination: response.pagination }`
+- Added validation: Check `!product || !seller || !auction` before rendering
+
+**Files Modified:** `/frontend/src/services/productService.ts`, `/frontend/src/pages/Product/ProductDetailPage.tsx`
+
+### 3. URL Pattern - Enforce slug-id Format Only
+
+**Problem:** Initial requirement unclear about backward compatibility with numeric-only IDs.
+
+**Clarification:** Frontend URLs **MUST** use `{slug}-{id}` format for SEO. Numeric-only IDs are rejected.
+
+**Solution:**
+
+- `parseProductSlugId()` rejects purely numeric strings with regex `/^\d+$/`
+- `ProductListCard` requires `slug` prop, falls back to `/products` (search page) if missing
+- Backend returns `slug` in both search results and product detail responses
+
+**URL Behavior:**
+
+- ✅ Accept: `/products/vintage-camera-123` → Parse `{ slug: "vintage-camera", id: 123 }`
+- ❌ Reject: `/products/123` → Returns `null`, shows error page
+- 📡 API: Always uses numeric ID only: `GET /products/123`
+
+**Files Modified:** `/frontend/src/utils/urlHelpers.ts`, `/frontend/src/components/auction/ProductListCard.tsx`, `/backend/src/repositories/product.repository.ts`, `/backend/src/services/product.service.ts`
+
+---
+
+## Original Requirements
+
 1. Hiện tại thì frontend đang hiển thị URL cho một Product Detail Page là /products/{id}. Ví dụ: http://localhost:5173/products/1
 
 ## Expected Output
@@ -516,3 +688,154 @@ export interface PlaceBidErrorResponse {
 
 - Search Products API cần thêm param: `excludeProductIds?: number[]`
 - Current có: `excludeCategorySlugs` nhưng cần `excludeProductIds` cho related products
+
+---
+
+## Critical Implementation Notes
+
+### Backend Response Format
+
+Tất cả API responses được wrap bởi `formatResponse()` hoặc `formatPaginatedResponse()`:
+
+```typescript
+// Controller sử dụng:
+formatResponse(response, 200, result);
+// → Trả về: { success: true, data: result }
+
+formatPaginatedResponse(response, 200, items, pagination);
+// → Trả về: { success: true, data: items, pagination: {...} }
+```
+
+**Frontend services PHẢI unwrap:**
+
+```typescript
+const response = await apiClient.get("/products/123");
+return response.data; // NOT return response directly
+```
+
+### URL Pattern Enforcement
+
+**parseProductSlugId() Logic:**
+
+1. Check if input is purely numeric (`/^\d+$/`) → Reject (return null)
+2. Find last dash, split into slug and id
+3. Validate both parts exist and id is numeric
+4. Return `{ slug, id }` or `null`
+
+**ProductListCard Navigation:**
+
+- Requires `slug` prop from API
+- Click entire card → navigate to `/products/{slug}-{id}`
+- If no slug → navigate to `/products` (search page) instead of breaking
+
+### Database Schema
+
+**products table:**
+
+- Has `slug` column (VARCHAR)
+- Trigger `auto_generate_slug()` runs on INSERT/UPDATE
+- Existing products already have slugs populated
+
+**product_comments table = Q&A:**
+
+- `parent_id = NULL` → Questions
+- `parent_id != NULL` → Answers (replies to questions)
+- Only fetch first answer per question
+
+### Authentication Flow
+
+**Guest Users (no token):**
+
+- AuthContext: Skip `getMe()` API call
+- Product Detail: `userId` parameter omitted
+- Backend: Returns `userProductStatus = undefined`
+
+**Logged In Users:**
+
+- AuthContext: Verifies token via `getMe()`
+- Product Detail: Pass `userId` query param
+- Backend: Calculates watchlist/bid status
+
+### Related Products Query
+
+**Strategy:**
+
+- Reuse `searchProducts()` repository method
+- Filter: Same category as current product
+- Exclude: Current product ID via `excludeProductIds` array
+- Limit: 4 products (not 5)
+- Sort: "newest" (can be changed)
+
+**Implementation:**
+
+```typescript
+const relatedProducts = await productRepository.searchProducts(
+  undefined, // no search query
+  product.category_slug, // same category
+  1, // page 1
+  4, // limit 4
+  "newest", // sort
+  undefined, // no exclude category
+  [productId] // exclude current product
+);
+```
+
+---
+
+## Testing Checklist
+
+### Backend API
+
+- [ ] GET /products/:id returns correct structure with all nested fields
+- [ ] GET /products/:id?userId=X returns userProductStatus when authenticated
+- [ ] GET /products/:id without userId omits userProductStatus (guest users)
+- [ ] GET /products/:id/bids returns paginated bid history
+- [ ] GET /products/:id/questions returns paginated Q&A
+- [ ] GET /products?categorySlug=X&excludeProductIds=1,2 works correctly
+- [ ] Search API returns `slug` field in all product results
+- [ ] Breadcrumb recursive query handles multi-level categories
+- [ ] Seller rating calculation is accurate (average, total, positive%)
+- [ ] Bidder names are masked correctly (\*\*\*\*[last 4-5 chars])
+- [ ] Response format: All endpoints wrap data in `{ success, data, ... }`
+
+### Frontend
+
+- [ ] URL /products/slug-123 parses correctly and displays product
+- [ ] URL /products/123 (numeric only) shows error page (rejected for SEO)
+- [ ] Product detail page displays all primary data on initial load
+- [ ] Lazy loading: Bid History tab fetches on first click only
+- [ ] Lazy loading: Q&A tab fetches on first click only
+- [ ] Related products display correctly (max 4 items)
+- [ ] Breadcrumb navigation links work correctly
+- [ ] ProductListCard entire card clickable, navigates to slug-id URL
+- [ ] Guest users: No 401 errors, no userProductStatus displayed
+- [ ] Logged in users: Watchlist/outbid status displays correctly
+- [ ] Service methods unwrap API response correctly (response.data)
+
+### Edge Cases
+
+- [ ] Product with no bids yet (topBidder should show "No bids yet")
+- [ ] Product with no questions yet (empty state message)
+- [ ] Product with no related products (hide section or show message)
+- [ ] Product with single-level category (no parent breadcrumb)
+- [ ] Product with multi-level category (3+ levels in breadcrumb)
+- [ ] Seller with 0 reviews (rating display handles division by zero)
+- [ ] Product missing images array (fallback to thumbnail or placeholder)
+- [ ] Product missing description (show empty state)
+- [ ] Product with missing/null slug (ProductListCard navigates to /products)
+- [ ] Expired/ended auction (status handling, disable bid button)
+
+### Performance
+
+- [ ] Initial page load only makes 1 API call (GET /products/:id)
+- [ ] Bid history tab clicked: Only 1 additional API call
+- [ ] Q&A tab clicked: Only 1 additional API call
+- [ ] Tab switching doesn't re-fetch data (cached in state)
+- [ ] Related products included in initial response (no separate call)
+
+### Security
+
+- [ ] User-specific data (isWatchlisted, isOutbid) only shown when authenticated
+- [ ] UserId query param validated on backend
+- [ ] Token verification works correctly (no 401 for missing tokens)
+- [ ] Bidder names properly masked in all responses

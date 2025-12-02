@@ -103,3 +103,57 @@ export const appendProductDescription = async (
     next(error);
   }
 };
+
+// Product Detail Page - New Implementation
+export const getProductDetail = async (
+  request: Request,
+  response: Response,
+  next: NextFunction
+) => {
+  try {
+    const productId = Number(request.params.id);
+    const userId = request.query.userId ? Number(request.query.userId) : undefined;
+
+    const result = await productService.getProductDetail(productId, userId);
+    formatResponse(response, 200, result);
+  } catch (error) {
+    logger.error("ProductController", "Failed to get product detail", error);
+    next(error);
+  }
+};
+
+export const getProductBidHistory = async (
+  request: Request,
+  response: Response,
+  next: NextFunction
+) => {
+  try {
+    const productId = Number(request.params.id);
+    const page = Number(request.query.page) || 1;
+    const limit = Number(request.query.limit) || 20;
+
+    const result = await productService.getProductBidHistory(productId, page, limit);
+    formatPaginatedResponse(response, 200, result.bids, result.pagination);
+  } catch (error) {
+    logger.error("ProductController", "Failed to get bid history", error);
+    next(error);
+  }
+};
+
+export const getProductQuestions = async (
+  request: Request,
+  response: Response,
+  next: NextFunction
+) => {
+  try {
+    const productId = Number(request.params.id);
+    const page = Number(request.query.page) || 1;
+    const limit = Number(request.query.limit) || 10;
+
+    const result = await productService.getProductQuestions(productId, page, limit);
+    formatPaginatedResponse(response, 200, result.questions, result.pagination);
+  } catch (error) {
+    logger.error("ProductController", "Failed to get product questions", error);
+    next(error);
+  }
+};

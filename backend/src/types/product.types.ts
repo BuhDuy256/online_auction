@@ -70,6 +70,7 @@ export interface ProductBidInfo {
 
 export interface ProductListCardProps {
   id: string;
+  slug?: string;
   title: string;
   image: string;
   currentBid: number;

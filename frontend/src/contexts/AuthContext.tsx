@@ -53,17 +53,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const verifyUser = async () => {
       const token = localStorage.getItem("token");
-      if (token) {
-        try {
-          const response = await authService.getMe();
-          setUser(response.data);
-        } catch (error) {
-          console.error("Token verification failed:", error);
-          authService.logout();
-          setUser(null);
-        }
+      if (!token) {
+        // No token, skip API call
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      try {
+        const response = await authService.getMe();
+        setUser(response.data);
+      } catch (error) {
+        console.error("Token verification failed:", error);
+        // Clear invalid token
+        localStorage.removeItem("token");
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     };
     verifyUser();
   }, []);

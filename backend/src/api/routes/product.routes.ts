@@ -16,7 +16,15 @@ router.post("/",
 );
 
 router.get("/:id",
-  productController.getProductDetailById
+  productController.getProductDetail // Updated to new implementation
+);
+
+router.get("/:id/bids",
+  productController.getProductBidHistory // New: Bid history (lazy load)
+);
+
+router.get("/:id/questions",
+  productController.getProductQuestions // New: Q&A (lazy load)
 );
 
 router.get("/:id/comments",

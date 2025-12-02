@@ -172,7 +172,8 @@ export const searchProducts = async (
   page: number = 1,
   limit: number = 10,
   sort?: SortOption,
-  excludeCategorySlugs?: string[]
+  excludeCategorySlugs?: string[],
+  excludeProductIds?: number[]
 ) => {
   const offset = (page - 1) * limit;
 
@@ -212,6 +213,10 @@ export const searchProducts = async (
     }
   }
 
+  if (excludeProductIds && excludeProductIds.length > 0) {
+    query = query.whereNotIn("products.product_id", excludeProductIds);
+  }
+
   const countQuery = query.clone().count("products.product_id as total").first();
 
   if (sort && Array.isArray(sort) && sort.length > 0) {
@@ -237,6 +242,7 @@ export const searchProducts = async (
     .leftJoin("users", "products.highest_bidder_id", "users.id")
     .select(
       "products.product_id",
+      "products.slug",
       "products.thumbnail_url",
       "products.name",
       "products.current_price",
@@ -524,4 +530,186 @@ export const getProductBidInfo = async (
   }
 
   return product;
+};
+
+// Product Detail Page Methods
+export const getProductDetailById = async (productId: number) => {
+  const product = await db("products")
+    .leftJoin("categories", "products.category_id", "categories.category_id")
+    .leftJoin("users as seller", "products.seller_id", "seller.id")
+    .leftJoin("users as bidder", "products.highest_bidder_id", "bidder.id")
+    .where("products.product_id", productId)
+    .select(
+      "products.*",
+      "categories.category_id",
+      "categories.name as category_name",
+      "categories.slug as category_slug",
+      "categories.parent_id",
+      "seller.id as seller_id",
+      "seller.full_name as seller_name",
+      "seller.positive_reviews",
+      "seller.negative_reviews",
+      "bidder.full_name as bidder_name"
+    )
+    .first();
+
+  return product;
+};
+
+export const getProductImages = async (productId: number) => {
+  return await db("product_images")
+    .where({ product_id: productId })
+    .select("image_url")
+    .orderBy("image_id", "asc");
+};
+
+export const getProductDescription = async (productId: number) => {
+  return await db("product_descriptions")
+    .where({ product_id: productId })
+    .orderBy("version", "desc")
+    .select("content")
+    .first();
+};
+
+export const getCategoryWithParents = async (categoryId: number) => {
+  const categories = await db.raw(`
+    WITH RECURSIVE category_path AS (
+      SELECT category_id, name, slug, parent_id, 0 as level
+      FROM categories 
+      WHERE category_id = ?
+      
+      UNION ALL
+      
+      SELECT c.category_id, c.name, c.slug, c.parent_id, cp.level + 1
+      FROM categories c 
+      INNER JOIN category_path cp ON c.category_id = cp.parent_id
+    )
+    SELECT * FROM category_path ORDER BY level DESC
+  `, [categoryId]);
+
+  return categories.rows || [];
+};
+
+export const getWatchlistCount = async (productId: number) => {
+  const result = await db("watchlist")
+    .where({ product_id: productId })
+    .count("user_id as total")
+    .first();
+
+  return result ? parseInt(result.total as string) : 0;
+};
+
+export const isUserWatchlisted = async (userId: number, productId: number) => {
+  const result = await db("watchlist")
+    .where({ user_id: userId, product_id: productId })
+    .first();
+
+  return !!result;
+};
+
+export const getUserBidStatus = async (userId: number, productId: number) => {
+  // Check if user has placed any bid (manual or auto)
+  const manualBid = await db("bids")
+    .where({ bidder_id: userId, product_id: productId })
+    .first();
+
+  const autoBid = await db("auto_bids")
+    .where({ bidder_id: userId, product_id: productId })
+    .select("max_amount")
+    .first();
+
+  return {
+    hasPlacedBid: !!(manualBid || autoBid),
+    currentUserMaxBid: autoBid?.max_amount ? parseFloat(autoBid.max_amount) : undefined,
+  };
+};
+
+export const getProductQuestions = async (productId: number, page: number = 1, limit: number = 10) => {
+  const offset = (page - 1) * limit;
+
+  // Get parent comments (questions) with user info
+  const questions = await db("product_comments as pc")
+    .leftJoin("users as asker", "pc.user_id", "asker.id")
+    .where({
+      "pc.product_id": productId,
+      "pc.parent_id": null,
+    })
+    .select(
+      "pc.comment_id",
+      "pc.content as question",
+      "pc.created_at",
+      "asker.full_name as asker_name"
+    )
+    .orderBy("pc.created_at", "desc")
+    .limit(limit)
+    .offset(offset);
+
+  // Get first reply (answer) for each question
+  const questionIds = questions.map(q => q.comment_id);
+  const answers = await db("product_comments as reply")
+    .leftJoin("users as answerer", "reply.user_id", "answerer.id")
+    .whereIn("reply.parent_id", questionIds)
+    .select(
+      "reply.parent_id",
+      "reply.content as answer",
+      "reply.created_at as answered_at",
+      "answerer.full_name as answerer_name"
+    )
+    .orderBy("reply.created_at", "asc");
+
+  // Map answers to questions (first answer only)
+  const answerMap = new Map();
+  answers.forEach(a => {
+    if (!answerMap.has(a.parent_id)) {
+      answerMap.set(a.parent_id, a);
+    }
+  });
+
+  // Get total count
+  const totalResult = await db("product_comments")
+    .where({ product_id: productId, parent_id: null })
+    .count("comment_id as total")
+    .first();
+
+  const total = totalResult ? parseInt(totalResult.total as string) : 0;
+
+  return {
+    questions: questions.map(q => ({
+      ...q,
+      answer: answerMap.get(q.comment_id) || null,
+    })),
+    total,
+  };
+};
+
+export const getProductBidHistory = async (productId: number, page: number = 1, limit: number = 20) => {
+  const offset = (page - 1) * limit;
+
+  const bids = await db("bids")
+    .leftJoin("users", "bids.bidder_id", "users.id")
+    .where("bids.product_id", productId)
+    .select(
+      "bids.bid_id",
+      "bids.amount",
+      "bids.created_at",
+      "users.full_name as bidder_name"
+    )
+    .orderBy("bids.amount", "desc")
+    .orderBy("bids.created_at", "desc")
+    .limit(limit)
+    .offset(offset);
+
+  const totalResult = await db("bids")
+    .where({ product_id: productId })
+    .count("bid_id as total")
+    .first();
+
+  const total = totalResult ? parseInt(totalResult.total as string) : 0;
+
+  // Mark top bid
+  if (bids.length > 0) {
+    bids[0].isTopBid = true;
+  }
+
+  return { bids, total };
 };
