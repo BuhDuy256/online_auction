@@ -43,7 +43,6 @@ const AppRouter = () => {
       <Route path="/products" element={<ProductListPage />} />
       <Route path="/products/:id" element={<ProductDetailPage />} />
       <Route path="/transaction-room" element={<TransactionRoomPage />} />
-      <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
 
       {/* ============================================== */}
       {/* TUYẾN ĐƯỜNG CÔNG KHAI (CHỈ CHO KHÁCH) */}
@@ -74,7 +73,7 @@ const AppRouter = () => {
       </Route>
 
       <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]} />}>
-        {/* <Route path="/admin/dashboard" element={<AdminDashboardPage />} /> */}
+        <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
       </Route>
     </Routes>
   );

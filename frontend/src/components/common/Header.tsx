@@ -81,7 +81,7 @@ const Header: React.FC = () => {
           </form>
 
           {/* Navigation & Auth */}
-          <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button
               variant="ghost"
               className="hidden lg:flex"
@@ -90,6 +90,23 @@ const Header: React.FC = () => {
               <Menu className="mr-2 h-4 w-4" />
               Browse
             </Button>
+            {theme === "tactical" ? (
+              <Button
+                variant="ghost"
+                className="lg:flex"
+                onClick={() => setTheme("light")}
+              >
+                <Sun className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                className="lg:flex"
+                onClick={() => setTheme("tactical")}
+              >
+                <Moon className="h-5 w-5" />
+              </Button>
+            )}
 
             {isAuthenticated ? (
               <div className="flex items-center gap-3">
@@ -117,21 +134,6 @@ const Header: React.FC = () => {
                       >
                         <User className="h-5 w-5 text-muted-foreground group-focus:text-accent-foreground transition-colors" />
                         <span>Profile</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() =>
-                          setTheme(theme === "tactical" ? "light" : "tactical")
-                        }
-                        className="group cursor-pointer"
-                      >
-                        {theme === "tactical" ? (
-                          <Sun className="h-5 w-5 text-muted-foreground group-focus:text-accent-foreground transition-colors" />
-                        ) : (
-                          <Moon className="h-5 w-5 text-muted-foreground group-focus:text-accent-foreground transition-colors" />
-                        )}
-                        <span>
-                          {theme === "tactical" ? "Light Mode" : "Dark Mode"}
-                        </span>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -162,24 +164,26 @@ const Header: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => navigate("/signup")}
-                >
-                  <User className="mr-2 h-5 w-5" />
-                  <span className="font-bold">Sign Up</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate("/login")}
-                >
-                  <LogIn className="mr-2 h-5 w-5" />
-                  <span className="font-bold">Login</span>
-                </Button>
-              </div>
+              hasRole("bidder") && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => navigate("/signup")}
+                  >
+                    <User className="mr-2 h-5 w-5" />
+                    <span className="font-bold">Sign Up</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/login")}
+                  >
+                    <LogIn className="mr-2 h-5 w-5" />
+                    <span className="font-bold">Login</span>
+                  </Button>
+                </div>
+              )
             )}
           </div>
         </div>

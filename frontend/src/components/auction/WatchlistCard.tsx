@@ -74,7 +74,7 @@ export function WatchlistCard({
 
         {isActive ? (
           <Button className="w-full" size="sm">
-            Place Bid
+            View Detail
           </Button>
         ) : (
           <Button variant="outline" className="w-full" size="sm" disabled>
