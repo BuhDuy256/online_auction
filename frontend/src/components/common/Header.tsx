@@ -1,15 +1,19 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { useTheme } from "../../hooks/useTheme";
 import {
   LogIn,
   LogOut,
   Menu,
   Search,
   Sparkles,
+  BadgeDollarSign,
   User,
   CircleUserRound,
   BookA,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -24,7 +28,8 @@ import {
 } from "../ui/dropdown-menu";
 
 const Header: React.FC = () => {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, hasRole } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -76,7 +81,7 @@ const Header: React.FC = () => {
           </form>
 
           {/* Navigation & Auth */}
-          <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button
               variant="ghost"
               className="hidden lg:flex"
@@ -85,6 +90,23 @@ const Header: React.FC = () => {
               <Menu className="mr-2 h-4 w-4" />
               Browse
             </Button>
+            {theme === "tactical" ? (
+              <Button
+                variant="ghost"
+                className="lg:flex"
+                onClick={() => setTheme("light")}
+              >
+                <Sun className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                className="lg:flex"
+                onClick={() => setTheme("tactical")}
+              >
+                <Moon className="h-5 w-5" />
+              </Button>
+            )}
 
             {isAuthenticated ? (
               <div className="flex items-center gap-3">
@@ -126,21 +148,23 @@ const Header: React.FC = () => {
                 </div>
 
                 {/* Upgrade Button */}
-                <Button className="hidden lg:flex">
-                  <Sparkles className="mr h-4 w-4" />
-                  Upgrade to Seller
-                </Button>
+                {hasRole("seller") ? (
+                  <Button
+                    className="hidden lg:flex"
+                    onClick={() => navigate("/seller/dashboard")}
+                  >
+                    <BadgeDollarSign className="mr h-4 w-4" />
+                    Seller Dashboard
+                  </Button>
+                ) : (
+                  <Button className="hidden lg:flex">
+                    <Sparkles className="mr h-4 w-4" />
+                    Upgrade to Seller
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate("/login")}
-                >
-                  <LogIn className="mr-2 h-5 w-5" />
-                  <span className="font-bold">Login</span>
-                </Button>
                 <Button
                   variant="default"
                   size="sm"
@@ -148,6 +172,14 @@ const Header: React.FC = () => {
                 >
                   <User className="mr-2 h-5 w-5" />
                   <span className="font-bold">Sign Up</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/login")}
+                >
+                  <LogIn className="mr-2 h-5 w-5" />
+                  <span className="font-bold">Login</span>
                 </Button>
               </div>
             )}

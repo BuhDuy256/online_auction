@@ -1,9 +1,21 @@
 import MainLayout from "../../layouts/MainLayout";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { BookA, DollarSign, Sparkles, TrendingUp, Zap } from "lucide-react";
+import {
+  BookA,
+  DollarSign,
+  Gavel,
+  LogIn,
+  Sparkles,
+  TrendingUp,
+  User,
+  UserPlus,
+  Zap,
+} from "lucide-react";
 import { ChevronRight } from "lucide-react";
 import { AuctionCard } from "../../components/auction/AuctionCard";
+import { useAuth } from "../../hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 // Mock auction data
 const endingSoonAuctions = [
@@ -157,6 +169,8 @@ const highestPriceAuctions = [
 ];
 
 export default function HomePage() {
+  const { isAuthenticated, hasRole } = useAuth();
+  const navigate = useNavigate();
   return (
     <MainLayout>
       {/* Hero Section */}
@@ -290,18 +304,72 @@ export default function HomePage() {
         <section className="relative overflow-hidden rounded-xl border border-accent/30 bg-gradient-to-br from-accent/10 via-card to-card p-8 md:p-12">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxIDAgNiAyLjY5IDYgNnMtMi42OSA2LTYgNi02LTIuNjktNi02IDIuNjktNiA2LTZ6TTI0IDZjMy4zMSAwIDYgMi42OSA2IDZzLTIuNjkgNi02IDYtNi0yLjY5LTYtNiAyLjY5LTYgNi02ek00OCAzNmMzLjMxIDAgNiAyLjY5IDYgNnMtMi42OSA2LTYgNi02LTIuNjktNi02IDIuNjktNiA2LTZ6IiBzdHJva2U9IiNmZjk5MDAiIHN0cm9rZS13aWR0aD0iLjUiIG9wYWNpdHk9Ii4wNSIvPjwvZz48L3N2Zz4=')] opacity-50"></div>
 
-          <div className="relative z-10 text-center max-w-2xl mx-auto">
-            <BookA className="h-12 w-12 text-accent mx-auto mb-4" />
-            <h2 className="text-3xl mb-4">Ready to Start Selling?</h2>
-            <p className="text-muted-foreground mb-6">
-              Join thousands of sellers on Auctionary. List your items, reach a
-              global audience, and get paid securely through our escrow system.
-            </p>
-            <Button size="lg" className="text-base">
-              <Sparkles className="mr-2 h-5 w-5" />
-              Become a Seller Today
-            </Button>
-          </div>
+          {!isAuthenticated ? (
+            <div className="relative z-10 text-center max-w-2xl mx-auto">
+              <UserPlus className="h-12 w-12 text-accent mx-auto mb-4" />
+              <h2 className="text-3xl mb-4">New to Auctionary?</h2>
+              <p className="text-muted-foreground mb-6">
+                Sign up now to start bidding on exclusive items. Join our
+                community and find your next treasure today!
+              </p>
+              <div className="flex justify-center gap-4">
+                <Button
+                  size="lg"
+                  className="text-base"
+                  onClick={() => navigate("/signup")}
+                >
+                  <User className="mr-2 h-5 w-5" />
+                  Sign Up Now
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="text-base"
+                  onClick={() => navigate("/login")}
+                >
+                  <LogIn className="mr-2 h-5 w-5" />
+                  Log In
+                </Button>
+              </div>
+            </div>
+          ) : hasRole("seller") ? (
+            /* CASE 2: ĐÃ ĐĂNG NHẬP + LÀ SELLER */
+            <div className="relative z-10 text-center max-w-2xl mx-auto">
+              <BookA className="h-12 w-12 text-accent mx-auto mb-4" />
+              <h2 className="text-3xl mb-4">Got something unique to sell?</h2>
+              <p className="text-muted-foreground mb-6">
+                Keep your inventory fresh! Create a new listing now and attract
+                more bidders to your shop.
+              </p>
+              <Button
+                size="lg"
+                className="text-base"
+                onClick={() => navigate("/under-development")}
+              >
+                <Gavel className="mr-2 h-5 w-5" />
+                Create New Auction
+              </Button>
+            </div>
+          ) : (
+            /* CASE 3: ĐÃ ĐĂNG NHẬP + CHỈ LÀ BIDDER (Mời nâng cấp) */
+            <div className="relative z-10 text-center max-w-2xl mx-auto">
+              <Sparkles className="h-12 w-12 text-accent mx-auto mb-4" />
+              <h2 className="text-3xl mb-4">Ready to Start Selling?</h2>
+              <p className="text-muted-foreground mb-6">
+                Join thousands of sellers on Auctionary. List your items, reach
+                a global audience, and get paid securely through our escrow
+                system.
+              </p>
+              <Button
+                size="lg"
+                className="text-base"
+                onClick={() => navigate("/under-development")}
+              >
+                <Sparkles className="mr-2 h-5 w-5" />
+                Become a Seller Today
+              </Button>
+            </div>
+          )}
         </section>
       </main>
     </MainLayout>
