@@ -87,7 +87,6 @@ export const signupUser = async (userData: SignupSchema): Promise<SignupResponse
     email: mappedUser.email,
     fullName: mappedUser.fullName,
     isVerified: mappedUser.isVerified,
-    message: "OTP sent to your email. Please verify to continue.",
   };
 };
 
@@ -132,7 +131,6 @@ export const loginUser = async (
         fullName: mappedUser.fullName,
         isVerified: false,
       },
-      message: "Please verify your email. A new OTP has been sent.",
     };
   }
 

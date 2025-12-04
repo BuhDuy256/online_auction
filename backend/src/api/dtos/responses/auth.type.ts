@@ -51,13 +51,11 @@ export interface SignupResponse {
   email: string;
   fullName: string;
   isVerified: boolean;
-  message: string;
 }
 
 export interface VerificationRequiredResponse {
   requiresVerification: true;
   user: UserResponse;
-  message: string;
 }
 
 export interface GoogleLoginData {

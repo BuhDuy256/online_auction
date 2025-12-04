@@ -50,7 +50,7 @@ export const login = async (
     if ("requiresVerification" in result) {
       response
         .status(200)
-        .message(result.message)
+        .message("Please verify your email. A new OTP has been sent.")
         .json({
           requiresVerification: true,
           user: result.user,
