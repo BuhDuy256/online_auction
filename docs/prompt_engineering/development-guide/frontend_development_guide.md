@@ -184,3 +184,32 @@ Use the components in `src/components/ui/` whenever possible. These are styled c
 - Catch errors in Services or Components.
 - Use `toast` from `react-hot-toast` (or `react-toastify`) to show user-friendly error messages.
 - Log technical errors to console for debugging.
+
+## 11. Special Workflow: From Mock Data to Real API
+
+When developing UI before the Backend is ready, or when integrating Backend into existing "Mocked" UI:
+
+### Step 1: Define UI with Mock Data
+
+- Create the component using hardcoded variables (e.g., `const mockProducts = [...]`).
+- **Constraint:** Do not worry about API logic yet. Focus on UX/UI.
+
+### Step 2: Extract Interface (The Contract)
+
+- Once UI is approved, hover over the mock data variable to inspect its shape.
+- Create a strict Interface in `src/types/` that matches this mock data (e.g., `ProductViewModel`).
+- **Rule:** This Interface is the "Requirement" for the Backend.
+
+### Step 3: Service Integration
+
+- Create the Service function in `src/services/`.
+- **CRITICAL:** The Service must return `Promise<ProductViewModel>`.
+- If the Backend API response (DTO) differs from the `ProductViewModel`:
+  - **Option A (Preferred):** Ask Backend to update their response (Reference Backend Guide).
+  - **Option B (Frontend Adapter):** Create a generic mapping function inside the Service to transform `BackendDTO` -> `ProductViewModel`.
+
+### Step 4: Swap & Cleanup
+
+- In the Component, replace `mockData` with the data from the `useFetch` hook (or `useEffect`).
+- **Verification:** The UI must not flicker or break.
+- **Cleanup:** Delete the mock data variable/file.
