@@ -80,17 +80,18 @@ export function ProductListCard({
             </div>
           </div>
 
-          {buyNowPrice && (
             <div className="flex items-baseline justify-between">
               <span className="text-xs text-muted-foreground">Buy Now</span>
               <div className="text-success text-sm">
-                ${buyNowPrice.toLocaleString()}
+                {buyNowPrice? "$" + buyNowPrice.toLocaleString(): "---"}
               </div>
             </div>
-          )}
 
-          <div className="text-xs text-muted-foreground">
-            {bidCount} {bidCount === 1 ? "bid" : "bids"}
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-muted-foreground">Bids</span>
+            <div className="text-success text-foreground">
+              {bidCount}
+            </div>
           </div>
         </div>
 
@@ -98,15 +99,14 @@ export function ProductListCard({
           <Button className="flex-1" size="sm">
             Place Bid
           </Button>
-          {buyNowPrice && (
             <Button
               variant="outline"
               size="sm"
               className="border-success/50 text-success hover:bg-success/10"
             >
               <ShoppingCart className="h-3.5 w-3.5" />
+              Buy
             </Button>
-          )}
         </div>
       </CardContent>
     </Card>

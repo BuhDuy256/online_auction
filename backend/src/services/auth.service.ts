@@ -31,23 +31,7 @@ import {
   GoogleLoginSchema,
   FacebookLoginSchema,
 } from "../api/dtos/requests/auth.schema";
-
-const mapUserToResponse = (user: any) => {
-  if (!user) return null;
-  return {
-    id: user.id,
-    email: user.email,
-    fullName: user.full_name,
-    address: user.address,
-    isVerified: user.is_verified,
-    status: user.status,
-    positiveReviews: user.positive_reviews,
-    negativeReviews: user.negative_reviews,
-    password: user.password,
-    createdAt: user.created_at,
-    updatedAt: user.updated_at,
-  };
-};
+import { mapUserToResponse } from "../mappers/auth.mapper";
 
 export const signupUser = async (userData: SignupSchema): Promise<SignupResponse> => {
   const { fullName, email, password, address } = userData;

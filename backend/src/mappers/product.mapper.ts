@@ -1,9 +1,6 @@
 import { ProductListCardProps, ProductDetail, ProductComment } from "../api/dtos/responses/product.type";
 import { toNum } from "../utils/number.util";
 
-/**
- * Maps raw product data from repository to ProductListCardProps
- */
 export const mapToProductListCard = (product: any): ProductListCardProps => {
   if (!product) {
     throw new Error("Product data is required for mapping");
